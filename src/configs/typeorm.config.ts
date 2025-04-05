@@ -3,7 +3,7 @@ import { TypeOrmModuleOptions, TypeOrmOptionsFactory } from '@nestjs/typeorm';
 @Injectable()
 export class TypeOrmDbConfig implements TypeOrmOptionsFactory {
   createTypeOrmOptions(connectionName?: string): TypeOrmModuleOptions {
-
+    console.log(process.env.POSTGRES_HOST);
     return {
       type: 'postgres',
       host: process.env.POSTGRES_HOST,
@@ -11,9 +11,8 @@ export class TypeOrmDbConfig implements TypeOrmOptionsFactory {
       username: process.env.POSTGRES_USER,
       password: process.env.POSTGRES_PASSWORD,
       database: process.env.POSTGRES_DATABASE,
-      autoLoadEntities:true,
       entities: ['dist/modules/**/*.entity.js'],
-      migrations: ['dist/database/migrations/*.js'],
+      autoLoadEntities:true,
       synchronize:true,
      
     };

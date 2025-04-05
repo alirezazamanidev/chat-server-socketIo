@@ -10,6 +10,6 @@ export const appExternalImports=[
     }),
     TypeOrmModule.forRootAsync({
         useClass: TypeOrmDbConfig,
-        
+        inject:[TypeOrmDbConfig]
     })
 ]

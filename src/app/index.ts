@@ -1,6 +1,7 @@
 import { NestExpressApplication } from "@nestjs/platform-express";
 import { ValidationPipe } from "@nestjs/common";
 import helmet from "helmet";
+import * as express from 'express';
 
 import * as compression from 'compression';
 import * as cookieParser from 'cookie-parser';
@@ -15,6 +16,10 @@ export const appInit = (app: NestExpressApplication) => {
     
     // Cookie parser middleware
     app.use(cookieParser());
+    
+    // Body parsers
+    app.use(express.json());
+    app.use(express.urlencoded({ extended: true }));
     
     // CORS configuration
     app.enableCors({
