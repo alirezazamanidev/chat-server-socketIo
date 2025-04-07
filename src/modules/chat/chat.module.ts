@@ -8,8 +8,9 @@ import { Message } from './entities/message.entity';
 import { ConnectedUserService } from './services/connectced-user.service';
 import { ConnectedUser } from './entities/connected-user.entity';
 import { MessageService } from './services/message.service';
+import { UserModule } from '../user/user.module';
 @Module({
-  imports:[TypeOrmModule.forFeature([Chat,User,Message,ConnectedUser])],
+  imports:[TypeOrmModule.forFeature([Chat,User,Message,ConnectedUser]),UserModule],
   providers: [ChatGateway, ChatService,ConnectedUserService,MessageService],
 })
 export class ChatModule {}

@@ -20,10 +20,20 @@ export class UserService {
       throw new ConflictException('Username already exists');
     }
     const hashPassword = await hash(password, 10);
-    const user = this.userRepository.create({ ...userData, hashPassword,username });
+    const user = this.userRepository.create({
+      ...userData,
+      hashPassword,
+      username,
+    });
     return this.userRepository.save(user);
   }
   async findByUsername(username: string): Promise<User | null> {
     return this.userRepository.findOne({ where: { username } });
+  }
+  async findAll() {
+    return this.userRepository.find({
+      select: { id: true, username: true, fullName: true, created_at: true },
+      order:{created_at:"DESC"}
+    });
   }
 }

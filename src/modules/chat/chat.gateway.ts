@@ -24,6 +24,7 @@ import { RoomTypeEnum } from './enums/type.enum';
 import { WsValidationPipe } from 'src/common/pipes/ws-validation.pipe';
 import { CreateRoomDto } from './dto/chat.dto';
 import { WsCurrentUser } from 'src/common/decorators/ws-current-user.decorator';
+import { UserService } from '../user/user.service';
 
 @UseFilters(WsExceptionFilter)
 @UseInterceptors(WsLoggingInterceptor)
@@ -38,45 +39,49 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-
   constructor(
     private readonly chatService: ChatService,
     private readonly connectedUserService: ConnectedUserService,
     private readonly jwtService: JwtService,
+    private readonly userService: UserService,
   ) {}
 
-
-  async onModuleInit(){
+  async onModuleInit() {
     this.logger.log('ChatGateway initialized');
     await this.connectedUserService.deleteAll();
   }
 
   async handleConnection(client: Socket) {
-   try {
-    const user=await this.authenticateSocket(client)
-    await this.initializeUserConnection(user,client)
-   } catch (error) {
-    this.handleConnectionError(client,error)
-   }
+    try {
+      const user = await this.authenticateSocket(client);
+      await this.initializeUserConnection(user, client);
+    } catch (error) {
+      this.handleConnectionError(client, error);
+    }
   }
-
-
 
   async handleDisconnect(client: Socket) {
     await this.connectedUserService.delete(client.id);
     this.logger.log(`Client disconnected: ${client.id}`);
   }
 
+  @SubscribeMessage('getAllUsers')
+  async onGetAllUsers() {
+    const users = await this.userService.findAll();
+
+    return users;
+  }
+
   @SubscribeMessage('createRoom')
   async onCreateRoom(
-    @WsCurrentUser() currentUser:JwtPayload,
+    @WsCurrentUser() currentUser: JwtPayload,
     @MessageBody(new WsValidationPipe()) createRoomDto: CreateRoomDto,
   ): Promise<void> {
     try {
       this.validateRoomTypeAndParticipants(
         createRoomDto.type,
         createRoomDto.participants,
-        currentUser.sub
+        currentUser.sub,
       );
 
       const newRoom = await this.chatService.create(
@@ -124,7 +129,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
 
     const [bearer, token] = authHeader.split(' ');
-
     if (!token || bearer.toLocaleLowerCase() !== 'bearer')
       throw new WsUnauthorizedException(
         'Invalid authorization format. Use Bearer token',
