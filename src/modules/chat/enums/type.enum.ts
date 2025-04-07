@@ -1,6 +1,5 @@
-
-
-export enum ChatType {
-    PRIVATE = 'private',
-    GROUP = 'group'
-}
+export enum RoomTypeEnum {
+    DIRECT = 'DIRECT',
+    GROUP = 'GROUP',
+  }
+  

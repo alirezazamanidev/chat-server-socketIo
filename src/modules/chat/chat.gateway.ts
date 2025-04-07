@@ -6,6 +6,7 @@ import {
   OnGatewayDisconnect,
   MessageBody,
   ConnectedSocket,
+  WsException,
 } from '@nestjs/websockets';
 import { ChatService } from './services/chat.service';
 import { Server, Socket } from 'socket.io';
@@ -19,6 +20,10 @@ import { JwtService } from '@nestjs/jwt';
 import { ConnectedUserService } from './services/connectced-user.service';
 import { User } from '../user/entities/user.entity';
 import { JwtPayload } from '../auth/types/payload.type';
+import { RoomTypeEnum } from './enums/type.enum';
+import { WsValidationPipe } from 'src/common/pipes/ws-validation.pipe';
+import { CreateRoomDto } from './dto/chat.dto';
+import { WsCurrentUser } from 'src/common/decorators/ws-current-user.decorator';
 
 @UseFilters(WsExceptionFilter)
 @UseInterceptors(WsLoggingInterceptor)
@@ -56,6 +61,48 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
 
+
+  async handleDisconnect(client: Socket) {
+    await this.connectedUserService.delete(client.id);
+    this.logger.log(`Client disconnected: ${client.id}`);
+  }
+
+  @SubscribeMessage('createRoom')
+  async onCreateRoom(
+    @WsCurrentUser() currentUser:JwtPayload,
+    @MessageBody(new WsValidationPipe()) createRoomDto: CreateRoomDto,
+  ): Promise<void> {
+    try {
+      this.validateRoomTypeAndParticipants(
+        createRoomDto.type,
+        createRoomDto.participants,
+        currentUser.sub
+      );
+
+      const newRoom = await this.chatService.create(
+        currentUser.sub,
+        createRoomDto,
+      );
+
+      const createdRoomWithDetails = await this.chatService.findOne(
+        currentUser.sub,
+        newRoom.id,
+      );
+
+      // await this.notifyRoomParticipants(
+      //   createdRoomWithDetails.participants,
+      //   'roomCreated',
+      //   createdRoomWithDetails,
+      // );
+      this.logger.log(
+        `Room with ID ${newRoom.id} created and participants notified successfully.`,
+      );
+    } catch (error) {
+      this.logger.error(`Failed to create room: ${error.message}`, error.stack);
+      throw new WsException('Error occurred while creating the room.');
+    }
+  }
+
   private async initializeUserConnection(
     userPayload: JwtPayload,
     socket: Socket,
@@ -69,12 +116,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       `Client connected: ${socket.id} - User ID: ${userPayload.sub}`,
     );
   }
-  async handleDisconnect(client: Socket) {
-    await this.connectedUserService.delete(client.id);
-    this.logger.log(`Client disconnected: ${client.id}`);
-  }
-
-
   private authenticateSocket(client: Socket) {
     const authHeader = client.handshake.headers?.['authorization'];
     if (!authHeader)
@@ -100,6 +141,34 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return payload;
     } catch (error) {
       throw new WsUnauthorizedException('Invalid token: ' + error.message);
+    }
+  }
+  private validateRoomTypeAndParticipants(
+    roomType: string,
+    participants: string[],
+    userId: string,
+  ): void {
+    if (participants.includes(userId)) {
+      throw new WsException(
+        'The room owner or updater should not be included in the participants list.',
+      );
+    }
+
+    if (roomType === RoomTypeEnum.DIRECT && participants.length !== 1) {
+      throw new WsException(
+        'Direct chat must include exactly one participant aside from the room owner or updater.',
+      );
+    }
+
+    if (roomType === RoomTypeEnum.GROUP && participants.length < 1) {
+      throw new WsException(
+        'Group chat must include at least one participant aside from the room owner or updater.',
+      );
+    }
+
+    const uniqueParticipantIds = new Set(participants);
+    if (uniqueParticipantIds.size !== participants.length) {
+      throw new WsException('The participants list contains duplicates.');
     }
   }
 

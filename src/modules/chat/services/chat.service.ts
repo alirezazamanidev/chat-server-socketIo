@@ -1,11 +1,10 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../../user/entities/user.entity';
-import { Repository, In } from 'typeorm';
+import { Repository, In, DataSource } from 'typeorm';
 import { Chat } from '../entities/chat.entity';
 import { Message } from '../entities/message.entity';
-import { ChatType } from '../enums/type.enum';
-import { ChatDetailDto } from '../dto/chat.dto';
+import { AssignUsersDto, ChatDetailDto, CreateRoomDto } from '../dto/chat.dto';
 import { MessageService } from './message.service';
 import { plainToInstance } from 'class-transformer';
 import { WsException } from '@nestjs/websockets';
@@ -15,12 +14,42 @@ export class ChatService {
   private readonly logger=new Logger(ChatService.name);
 
   constructor(
+    private readonly dataSource:DataSource,
     private readonly messageService:MessageService,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     @InjectRepository(Chat) private readonly chatRepo: Repository<Chat>,
     @InjectRepository(Message) private readonly messageRepo: Repository<Message>
   ) {}
+
+  async create(userId: string, createRoomDto: CreateRoomDto): Promise<Chat> {
+    const { participants, ...roomDetails } = createRoomDto;
+
+    try {
+      const newRoom = this.chatRepo.create({
+        ...roomDetails,
+        createdBy: userId,
+       
+      });
+      const savedRoom = await this.chatRepo.save(newRoom);
+
+      if (participants && participants.length > 0) {
+        participants.push(userId);
+        await this.assignUsersToRoom(userId, {
+          chatId: savedRoom.id,
+          participants,
+        });
+      }
+
+      this.logger.log(
+        `Room with ID ${savedRoom.id} created successfully by User ID: ${userId}`,
+      );
+      return savedRoom;
+    } catch (error) {
+      this.logger.error(`Failed to create room: ${error.message}`, error.stack);
+      throw new WsException('Error occurred while creating the room.');
+    }
+  }
 
   async findByUserId(userId: string): Promise<ChatDetailDto[]> {
     try {
@@ -68,4 +97,51 @@ export class ChatService {
   }
 
 
+  private async assignUsersToRoom(
+    userId: string,
+    assignUsersDto: AssignUsersDto,
+  ): Promise<void> {
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        const chat = await manager.findOne(
+          Chat,
+          {
+            where: { id: assignUsersDto.chatId },
+            relations: ['participants']
+          },
+        );
+        
+        if (!chat) {
+          throw new WsException('Chat not found');
+        }
+        
+        const operationType = chat.participants.length > 0 ? 're-assigned' : 'assigned';
+
+        // Remove existing participants
+        chat.participants = [];
+        await manager.save(chat);
+
+        // Get user entities for all participants
+        const users = await manager.findBy(User, {
+          id: In(assignUsersDto.participants)
+        });
+
+        // Assign new participants
+        chat.participants = users;
+        await manager.save(chat);
+
+        this.logger.log(
+          `Users ${operationType} to chat ${assignUsersDto.chatId} successfully.`,
+        );
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to assign users to chat: ${error.message}`,
+        error.stack,
+      );
+      throw new WsException(
+        `Failed to assign users to the chat: ${error.message}`,
+      );
+    }
+  }
 }

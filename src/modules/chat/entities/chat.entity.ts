@@ -3,7 +3,7 @@ import { PrimaryGeneratedColumn } from "typeorm";
 import { Entity } from "typeorm";
 import { Message } from "./message.entity";
 import { User } from "../../user/entities/user.entity";
-import { ChatType } from "../enums/type.enum";
+import { RoomTypeEnum } from "../enums/type.enum";
 
 @Entity('chat')
 export class Chat {
@@ -23,9 +23,12 @@ export class Chat {
 
     @Column({ default: true })
     isActive: boolean;
-    @Column({ type: 'enum', enum: ChatType, default: ChatType.PRIVATE })
-    type: ChatType;
+    @Column({ type: 'enum', enum: RoomTypeEnum })
+    type: RoomTypeEnum;
 
+    @Column()
+    createdBy: string;
+  
     @OneToMany(() => Message, msg => msg.chat)
     messages: Message[];
 

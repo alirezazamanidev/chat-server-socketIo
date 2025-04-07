@@ -1,19 +1,19 @@
 import { IsArray, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { IsNotEmpty } from 'class-validator';
-import { ChatType } from '../enums/type.enum';
+
 import { Transform } from 'class-transformer';
 import { Chat } from '../entities/chat.entity';
 import { Message } from '../entities/message.entity';
+import { RoomTypeEnum } from '../enums/type.enum';
 
 export class CreateRoomDto {
-  @IsEnum(ChatType)
+  @IsEnum(RoomTypeEnum)
   @Transform(({ value }) => value.toString())
   @IsNotEmpty()
-  type: ChatType;
-
+  type: RoomTypeEnum;
   @IsString()
   @IsOptional()
-  name: string;
+  key: string;
 
   @IsArray()
   @IsString({ each: true })
@@ -26,6 +26,18 @@ export class CreateRoomDto {
 }
 
 export class ChatDetailDto extends Chat {
-    lastMessage: Message;
-  }
-  
+  lastMessage: Message;
+}
+
+export class AssignUsersDto {
+  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
+  chatId: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsUUID(undefined, { each: true })
+  @IsNotEmpty()
+  participants: string[];
+}
