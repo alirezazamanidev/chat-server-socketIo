@@ -89,11 +89,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         newRoom.id,
       );
 
-      // await this.notifyRoomParticipants(
-      //   createdRoomWithDetails.participants,
-      //   'roomCreated',
-      //   createdRoomWithDetails,
-      // );
+      await this.notifyRoomParticipants(
+        createdRoomWithDetails.participants,
+        'roomCreated',
+        createdRoomWithDetails,
+      );
       this.logger.log(
         `Room with ID ${newRoom.id} created and participants notified successfully.`,
       );
