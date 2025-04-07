@@ -171,6 +171,51 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       throw new WsException('The participants list contains duplicates.');
     }
   }
+  private async notifyRoomParticipants(
+    participants: User[],
+    event: string,
+    payload: any,
+  ): Promise<void> {
+    const notificationPromises = participants.flatMap((participant) =>
+      participant.connectedUsers.map(({ socketId }) => ({
+        socketId,
+        promise: this.emitToSocket(socketId, event, payload),
+      })),
+    );
+
+    const results = await Promise.allSettled(
+      notificationPromises.map((np) => np.promise),
+    );
+
+    results.forEach((result, index) => {
+      const { socketId } = notificationPromises[index];
+      if (result.status === 'fulfilled') {
+        this.logger.log(
+          `Notification sent successfully to Socket ID ${socketId} for event '${event}'`,
+        );
+      } else if (result.status === 'rejected') {
+        this.logger.error(
+          `Failed to notify Socket ID ${socketId} for event '${event}': ${result.reason}`,
+        );
+      }
+    });
+  }
+
+  private async emitToSocket(
+    socketId: string,
+    event: string,
+    payload: any,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.server.to(socketId).emit(event, payload, (response: any) => {
+        if (response && response.error) {
+          reject(new Error(response.error));
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
 
   private handleConnectionError(socket: Socket, error: Error): void {
     this.logger.error(
