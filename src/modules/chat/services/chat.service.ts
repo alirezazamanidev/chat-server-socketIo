@@ -95,6 +95,35 @@ export class ChatService {
       );
     }
   }
+  async findOne(userId: string, id: string): Promise<Chat> {
+    try {
+      const chat = await this.chatRepo.findOne({
+        where: { id },
+        relations: ['participants', 'participants.connectedUsers', 'messages'],
+      });
+
+      if (!chat) {
+        throw new WsException(`Chat with ID "${id}" not found.`);
+      }
+
+      const isParticipant = chat.participants.some(
+        (participant) => participant.id === userId,
+      );
+      if (!isParticipant) {
+        throw new WsException(
+          `User with ID "${userId}" is not a participant of chat with ID "${id}".`,
+        );
+      }
+
+      return chat;
+    } catch (error) {
+      this.logger.error(
+        `Failed to find chat with ID ${id} for user ID ${userId}: ${error.message}`,
+        error.stack,
+      );
+      throw new WsException('Error occurred while retrieving the chat.');
+    }
+  }
 
 
   private async assignUsersToRoom(
