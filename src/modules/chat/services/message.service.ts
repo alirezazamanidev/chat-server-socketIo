@@ -26,15 +26,19 @@ export class MessageService {
         order: { created_at: 'DESC' },
         take: rows,
         skip: first,
+        select:{
+            sender:{
+                id:true,
+                fullName:true,
+                username:true,
+                created_at:true
+            }
+        }
       });
 
-      const sanitizedMessages = result.map((message) => {
-        const { sender } = message;
-        const { hashPassword, ...sanitizedCreator } = sender;
-        return { ...message, sender: sanitizedCreator };
-      });
+    
 
-      return { result: sanitizedMessages, total };
+      return { result, total };
     } catch (error) {
       this.logger.error(
         `Failed to retrieve messages for room ID ${chatId}: ${error.message}`,

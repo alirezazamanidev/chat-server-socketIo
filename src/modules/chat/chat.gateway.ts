@@ -48,9 +48,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleConnection(client: Socket) {
    try {
     const user=await this.authenticateSocket(client)
-    await this.in
+    await this.initializeUserConnection(user,client)
    } catch (error) {
-    
+    this.handleConnectionError(client,error)
    }
   }
 
@@ -69,14 +69,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     );
   }
   async handleDisconnect(client: Socket) {
-    const userId = this.socketUserMap.get(client.id);
-
-    if (userId) {
-      this.userSocketMap.delete(userId);
-      this.socketUserMap.delete(client.id);
-      client.leave(`user_${userId}`);
-      this.logger.log(`Client disconnected: ${client.id}, User: ${userId}`);
-    }
+    await this.connectedUserService.delete(client.id);
+    this.logger.log(`Client disconnected: ${client.id}`);
   }
 
 
