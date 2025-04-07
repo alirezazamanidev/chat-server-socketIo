@@ -18,6 +18,7 @@ import { isJWT } from 'class-validator';
 import { JwtService } from '@nestjs/jwt';
 import { ConnectedUserService } from './services/connectced-user.service';
 import { User } from '../user/entities/user.entity';
+import { JwtPayload } from '../auth/types/payload.type';
 
 @UseFilters(WsExceptionFilter)
 @UseInterceptors(WsLoggingInterceptor)
@@ -56,16 +57,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
 
   private async initializeUserConnection(
-    userPayload: User,
+    userPayload: JwtPayload,
     socket: Socket,
   ): Promise<void> {
     socket.data.user = userPayload;
-    await this.connectedUserService.create(userPayload.id, socket.id);
+    await this.connectedUserService.create(userPayload.sub, socket.id);
 
-    const rooms = await this.chatService.findByUserId(userPayload.id);
-    this.server.to(socket.id).emit('userAllRooms', rooms);
+    const chats = await this.chatService.findByUserId(userPayload.sub);
+    this.server.to(socket.id).emit('userAllChats', chats);
     this.logger.log(
-      `Client connected: ${socket.id} - User ID: ${userPayload.id}`,
+      `Client connected: ${socket.id} - User ID: ${userPayload.sub}`,
     );
   }
   async handleDisconnect(client: Socket) {

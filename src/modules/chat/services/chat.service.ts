@@ -32,7 +32,7 @@ export class ChatService {
           'participant.id = :userId',
           { userId },
         )
-        .leftJoinAndSelect('room.participants', 'allParticipants')
+        .leftJoinAndSelect('chat.participants', 'allParticipants')
         .getMany();
 
       const chatDetailsList: ChatDetailDto[] = [];
