@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Post, Body, UseInterceptors, UploadedFile, HttpCode, HttpStatus } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from '../user/dto/user.dto';
 import { SignInDto } from './dtos/auth.dto';
@@ -12,15 +12,14 @@ export class AuthController {
   @Post('signup')
   @UseInterceptors(UploadFile('avatar', 'users'))
     async signUp(@Body() userDto: CreateUserDto, @UploadedFile(
-      new FileValidationPipe({
-        maxSize: 1024 * 1024 * 2,
-        allowedTypes: ['image/jpeg', 'image/png', 'image/jpg']
-      })
+   
     ) avatar: Express.Multer.File) {
+
       return this.authService.signUp(userDto,avatar);
   }
 
   @Post('signin')
+  @HttpCode(HttpStatus.OK)
   async signIn(@Body() userDto: SignInDto) {
     return this.authService.signIn(userDto);
   }

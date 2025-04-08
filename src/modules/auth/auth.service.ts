@@ -8,6 +8,7 @@ import { CreateUserDto } from '../user/dto/user.dto';
 import { JwtService } from '@nestjs/jwt';
 import { SignInDto } from './dtos/auth.dto';
 import { compare } from 'bcrypt';
+import { unlinkSync } from 'fs';
 @Injectable()
 export class AuthService {
   constructor(
@@ -24,6 +25,7 @@ export class AuthService {
         jwtToken: this.jwtService.sign(payload),
       };
     } catch (error) {
+      unlinkSync(avatar.path)
       throw new InternalServerErrorException(error);
     }
   }
