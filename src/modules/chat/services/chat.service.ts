@@ -8,169 +8,60 @@ import { AssignUsersDto, ChatDetailDto, CreateRoomDto } from '../dto/chat.dto';
 import { MessageService } from './message.service';
 import { plainToInstance } from 'class-transformer';
 import { WsException } from '@nestjs/websockets';
+import { RoomTypeEnum } from '../enums/type.enum';
+import { WsNotFoundException } from 'src/common/exceptions';
 
 @Injectable()
 export class ChatService {
-  private readonly logger=new Logger(ChatService.name);
+  private readonly logger = new Logger(ChatService.name);
 
   constructor(
-    private readonly dataSource:DataSource,
-    private readonly messageService:MessageService,
+    private readonly dataSource: DataSource,
+    private readonly messageService: MessageService,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     @InjectRepository(Chat) private readonly chatRepo: Repository<Chat>,
-    @InjectRepository(Message) private readonly messageRepo: Repository<Message>
+    @InjectRepository(Message)
+    private readonly messageRepo: Repository<Message>,
   ) {}
-
-  async create(userId: string, createRoomDto: CreateRoomDto): Promise<Chat> {
-    const { participants, ...roomDetails } = createRoomDto;
-
-    try {
-      const newRoom = this.chatRepo.create({
-        ...roomDetails,
-        createdBy: userId,
-       
-      });
-      const savedRoom = await this.chatRepo.save(newRoom);
-
-      if (participants && participants.length > 0) {
-        participants.push(userId);
-        await this.assignUsersToRoom(userId, {
-          chatId: savedRoom.id,
-          participants,
-        });
-      }
-
-      this.logger.log(
-        `Room with ID ${savedRoom.id} created successfully by User ID: ${userId}`,
-      );
-      return savedRoom;
-    } catch (error) {
-      this.logger.error(`Failed to create room: ${error.message}`, error.stack);
-      throw new WsException('Error occurred while creating the room.');
-    }
-  }
-
-  async findByUserId(userId: string): Promise<ChatDetailDto[]> {
-    try {
-      const chats = await this.chatRepo
-        .createQueryBuilder('chat')
-        .innerJoin(
-          'chat.participants',
-          'participant',
-          'participant.id = :userId',
-          { userId },
-        )
-        .leftJoinAndSelect('chat.participants', 'allParticipants')
-        .getMany();
-
-      const chatDetailsList: ChatDetailDto[] = [];
-
-      for (const chat of chats) {
-        const lastMessageResult = await this.messageService.findByRoomId({
-          chatId:chat.id,
-          first: 0,
-          rows: 1,
-        });
-
-        const chatDetail = plainToInstance(ChatDetailDto, {
-          ...chat,
-          lastMessage: lastMessageResult.total
-            ? lastMessageResult.result[0]
-            : null,
-          participants: chat.participants,
-        });
-
-        chatDetailsList.push(chatDetail);
-      }
-
-      return chatDetailsList
-    } catch (error) {
-      this.logger.error(
-        `Failed to find rooms for user ID ${userId}: ${error.message}`,
-        { userId, errorStack: error.stack },
-      );
-      throw new WsException(
-        'An error occurred while retrieving user rooms. Please try again later.',
-      );
-    }
-  }
-  async findOne(userId: string, id: string): Promise<Chat> {
-    try {
-      const chat = await this.chatRepo.findOne({
-        where: { id },
-        relations: ['participants', 'participants.connectedUsers', 'messages'],
-      });
-
-      if (!chat) {
-        throw new WsException(`Chat with ID "${id}" not found.`);
-      }
-
-      const isParticipant = chat.participants.some(
-        (participant) => participant.id === userId,
-      );
-      if (!isParticipant) {
-        throw new WsException(
-          `User with ID "${userId}" is not a participant of chat with ID "${id}".`,
-        );
-      }
-
+  async createChat(senderId: string, receiverId: string) {
+    let chat = await this.chatRepo.findOne({
+      where: [
+        { senderId, receiverId },
+        { senderId: receiverId, receiverId: senderId },
+      ],
+    });
+    if (chat) {
       return chat;
-    } catch (error) {
-      this.logger.error(
-        `Failed to find chat with ID ${id} for user ID ${userId}: ${error.message}`,
-        error.stack,
-      );
-      throw new WsException('Error occurred while retrieving the chat.');
+    }
+    chat = this.chatRepo.create({
+      senderId,
+      receiverId,
+    });
+    return await this.chatRepo.save(chat);
+  }
+  async removeChat(chatId: string) {
+    const chat = await this.findChatById(chatId);
+    if (chat?.messages?.length === 0) {
+      await this.chatRepo.remove(chat);
     }
   }
-
-
-  private async assignUsersToRoom(
-    userId: string,
-    assignUsersDto: AssignUsersDto,
-  ): Promise<void> {
-    try {
-      await this.dataSource.transaction(async (manager) => {
-        const chat = await manager.findOne(
-          Chat,
-          {
-            where: { id: assignUsersDto.chatId },
-            relations: ['participants']
-          },
-        );
-        
-        if (!chat) {
-          throw new WsException('Chat not found');
-        }
-        
-        const operationType = chat.participants.length > 0 ? 're-assigned' : 'assigned';
-
-        // Remove existing participants
-        chat.participants = [];
-        await manager.save(chat);
-
-        // Get user entities for all participants
-        const users = await manager.findBy(User, {
-          id: In(assignUsersDto.participants)
-        });
-
-        // Assign new participants
-        chat.participants = users;
-        await manager.save(chat);
-
-        this.logger.log(
-          `Users ${operationType} to chat ${assignUsersDto.chatId} successfully.`,
-        );
-      });
-    } catch (error) {
-      this.logger.error(
-        `Failed to assign users to chat: ${error.message}`,
-        error.stack,
-      );
-      throw new WsException(
-        `Failed to assign users to the chat: ${error.message}`,
-      );
+  async findChatById(chatId: string) {
+    const chat = await this.chatRepo.findOne({
+      where: { id: chatId },
+      relations: ['messages'],
+    });
+    if (!chat) {
+      throw new WsNotFoundException('Chat not found');
     }
+    return chat;
+  }
+
+  async findByUserId(userId: string) {
+    return await this.chatRepo.find({
+      where: [{ senderId: userId }, { receiverId: userId }],
+      order: { created_at: 'DESC' },
+      relations: ['messages'],
+    });
   }
 }

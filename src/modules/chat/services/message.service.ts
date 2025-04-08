@@ -14,51 +14,18 @@ export class MessageService {
   ) {}
   private readonly logger=new Logger(MessageService.name)
 
-  async findByRoomId(
-    filterMessageDto: FilterMessageDto,
-  ): Promise<TResultAndCount<Message>> {
-    const { first = 0, rows = 20, filter = '', chatId } = filterMessageDto;
-
-    try {
-      const [result, total] = await this.messageRepo.findAndCount({
-        where: { text: ILike(`%${filter}%`), chatId },
-        relations: ['sender'],
-        order: { created_at: 'DESC' },
-        take: rows,
-        skip: first,
-        select:{
-            sender:{
-                id:true,
-                fullName:true,
-                username:true,
-                created_at:true
-            }
-        }
-      });
-
-    
-
-      return { result, total };
-    } catch (error) {
-      this.logger.error(
-        `Failed to retrieve messages for room ID ${chatId}: ${error.message}`,
-        error.stack,
-      );
-
-      if (error instanceof NotFoundException) {
-        throw new WsException(
-          error.message || 'The requested resource was not found.',
-        );
-      }
-
-      if (error instanceof WsException) {
-        throw error;
-      }
-
-      throw new WsException(
-        'An error occurred while fetching messages. Please try again later.',
-      );
-    }
+  async createMessage(senderId:string,chatId:string,text:string){
+    let message=this.messageRepo.create({
+      senderId,
+      chatId,
+      text
+    })
+    message=await this.messageRepo.save(message)
+    const completeMessage=await this.messageRepo.findOne({
+      where:{id:message.id},
+      relations:['sender']
+    })
+    return completeMessage
   }
 
 }

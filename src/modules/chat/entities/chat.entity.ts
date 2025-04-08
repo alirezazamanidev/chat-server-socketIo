@@ -9,26 +9,12 @@ import { RoomTypeEnum } from "../enums/type.enum";
 export class Chat {
     @PrimaryGeneratedColumn('uuid')
     id: string
-
-    @Column({ unique: true })
-    key: string;
-
-    @ManyToMany(() => User)
-    @JoinTable({
-        name: 'chat_participants',
-        joinColumn: { name: 'chat_id', referencedColumnName: 'id' },
-        inverseJoinColumn: { name: 'user_id', referencedColumnName: 'id' }
-    })
-    participants: User[];
-
     @Column({ default: true })
     isActive: boolean;
-    @Column({ type: 'enum', enum: RoomTypeEnum })
-    type: RoomTypeEnum;
-
     @Column()
-    createdBy: string;
-  
+    senderId: string;
+    @Column()
+    receiverId: string;
     @OneToMany(() => Message, msg => msg.chat)
     messages: Message[];
 

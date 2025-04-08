@@ -1,4 +1,4 @@
-import { ConnectedUser } from "src/modules/chat/entities/connected-user.entity";
+
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from "typeorm";
 
 @Entity('user')
@@ -20,6 +20,5 @@ export class User {
     @UpdateDateColumn({ name: 'updated_at' })
     updated_at: Date;
     
-  @OneToMany(() => ConnectedUser, (connectedUser) => connectedUser.user)
-  connectedUsers: ConnectedUser[];
+ 
 }
