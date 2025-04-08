@@ -11,6 +11,8 @@ export class User {
 
     @Column({ unique: true, type: 'varchar', length: 50 })
     username: string;
+    @Column({})
+    avatar:string
 
     @Column({ name: 'hash_password', type: 'varchar' })
     hashPassword: string;

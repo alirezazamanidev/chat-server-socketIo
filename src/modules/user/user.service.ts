@@ -11,7 +11,7 @@ export class UserService {
     private userRepository: Repository<User>,
   ) {}
 
-  async createUser(userDto: CreateUserDto): Promise<User> {
+  async createUser(userDto: CreateUserDto,file:Express.Multer.File): Promise<User> {
     const { password, username, ...userData } = userDto;
     const existingUser = await this.userRepository.findOne({
       where: { username },
@@ -24,6 +24,7 @@ export class UserService {
       ...userData,
       hashPassword,
       username,
+      avatar:file.path
     });
     return this.userRepository.save(user);
   }

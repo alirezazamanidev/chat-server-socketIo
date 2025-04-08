@@ -103,11 +103,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody(new WsValidationPipe()) messageData: { chatId: string, text: string }
   ){
     const { chatId, text } = messageData;
+    console.log(messageData)
     const senderId=client.data.user.sub
     const chat=await this.chatService.findChatById(chatId)
     const message=await this.messageService.createMessage(senderId,chatId,text)
-    this.server.to(`user-${chat.receiverId}`).emit('message',message);
-    this.server.to(`chat-${chatId}`).emit('message',message);
+    this.server.to(`user-${chat.receiverId}`).emit('notification',{
+      data:message,
+      type:'newMessage'
+    });
     return message;
   }
   
