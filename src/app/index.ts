@@ -2,7 +2,7 @@ import { NestExpressApplication } from "@nestjs/platform-express";
 import { ValidationPipe } from "@nestjs/common";
 import helmet from "helmet";
 import * as express from 'express';
-
+import { join } from 'path';
 import * as compression from 'compression';
 import * as cookieParser from 'cookie-parser';
 
@@ -21,6 +21,10 @@ export const appInit = (app: NestExpressApplication) => {
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
     
+    // Static files serving
+    app.useStaticAssets(join(process.cwd(), 'public'), {
+        prefix: '/static',
+      });
     // CORS configuration
     app.enableCors({
         origin: '*',

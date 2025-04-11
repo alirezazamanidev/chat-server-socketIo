@@ -1,43 +1,40 @@
-import { IsArray, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
-import { IsNotEmpty } from 'class-validator';
-
-import { Transform } from 'class-transformer';
-import { Chat } from '../entities/chat.entity';
-import { Message } from '../entities/message.entity';
+import {
+  IsArray,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 import { RoomTypeEnum } from '../enums/type.enum';
 
+export class JoinRoomDto {
+  @IsNotEmpty()
+  @IsUUID()
+  roomId: string;
+
+}
 export class CreateRoomDto {
-  @IsEnum(RoomTypeEnum)
-  @Transform(({ value }) => value.toString())
-  @IsNotEmpty()
-  type: RoomTypeEnum;
-  @IsString()
   @IsOptional()
-  key: string;
-
-  @IsArray()
-  @IsString({ each: true })
-  @IsUUID(undefined, {
-    each: true,
-    message: 'Each participant must be a valid UUID',
-  })
+  @IsString()
+  name?: string;
   @IsNotEmpty()
-  participants: string[];
+  @IsEnum(RoomTypeEnum)
+  type: string;
+  @IsNotEmpty()
+  @IsArray()
+  @IsUUID('4',{each:true})
+  members: string[];
 }
-
-export class ChatDetailDto extends Chat {
-  lastMessage: Message;
-}
-
 export class AssignUsersDto {
   @IsUUID()
   @IsString()
   @IsNotEmpty()
-  chatId: string;
+  roomId: string;
 
   @IsArray()
   @IsString({ each: true })
   @IsUUID(undefined, { each: true })
   @IsNotEmpty()
-  participants: string[];
+  members: string[];
 }

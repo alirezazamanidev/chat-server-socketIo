@@ -1,5 +1,6 @@
 
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from "typeorm";
+import { Room } from "src/modules/chat/entities/room.entity";
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToMany } from "typeorm";
 
 @Entity('user')
 export class User {
@@ -22,5 +23,6 @@ export class User {
     @UpdateDateColumn({ name: 'updated_at' })
     updated_at: Date;
     
- 
+    @ManyToMany(() => Room, (room) => room.participants)
+    rooms:Room[];
 }

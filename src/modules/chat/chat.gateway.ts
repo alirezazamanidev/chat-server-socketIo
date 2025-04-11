@@ -20,15 +20,14 @@ import { JwtService } from '@nestjs/jwt';
 
 import { User } from '../user/entities/user.entity';
 import { JwtPayload } from '../auth/types/payload.type';
-import { RoomTypeEnum } from './enums/type.enum';
-import { WsValidationPipe } from 'src/common/pipes/ws-validation.pipe';
-import { CreateRoomDto } from './dto/chat.dto';
-import { WsCurrentUser } from 'src/common/decorators/ws-current-user.decorator';
 import { UserService } from '../user/user.service';
 import { MessageService } from './services/message.service';
+import { SendMessageDto } from './dto/message.dto';
+import { WsValidationPipe } from 'src/common/pipes/ws-validation.pipe';
+import { Room } from './entities/room.entity';
+import { CreateRoomDto, JoinRoomDto } from './dto/chat.dto';
 
 @UseFilters(WsExceptionFilter)
-@UseInterceptors(WsLoggingInterceptor)
 @WebSocketGateway({
   cors: {
     origin: '*',
@@ -47,12 +46,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly messageService: MessageService,
   ) {}
 
-
   async handleConnection(client: Socket) {
     try {
       const user = await this.authenticateSocket(client);
       await this.initializeUserConnection(user, client);
-      client.join(`user-${user.sub}`)
+      client.join(`user-${user.sub}`);
+
+      // Broadcast user's online status to all connected clients
+      this.server.emit('userStatusChange', {
+        userId: user.sub,
+        isOnline: true,
+      });
     } catch (error) {
       this.handleConnectionError(client, error);
     }
@@ -60,75 +64,101 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
-    const user=client.data.user
-    client.leave(`user-${user.sub}`)
-  }
+    const user = client.data.user;
+    if (user) {
+      client.leave(`user-${user.sub}`);
 
-  @SubscribeMessage('joinRoom')
-  async onJoinRoom(
-    @ConnectedSocket() client: Socket,
-    @MessageBody(new WsValidationPipe()) messageData: { chatId: string }
-  ){
-    const { chatId } = messageData;
-   
-    const chat=await this.chatService.findChatById(chatId)
-    client.join(`chat-${chat.id}`);
-    return chat
+      // Broadcast user's offline status to all connected clients
+      this.server.emit('userStatusChange', {
+        userId: user.sub,
+        isOnline: false,
+        username: user.username,
+        timestamp: new Date(),
+      });
+    }
   }
 
   @SubscribeMessage('createRoom')
   async onCreateRoom(
     @ConnectedSocket() client: Socket,
-    @MessageBody(new WsValidationPipe()) messageData: { receiverId: string }
-  ){
-    const { receiverId } = messageData;
-    const senderId=client.data.user.sub
-    const chat=await this.chatService.createChat(senderId,receiverId);
-    return chat.id;
+    @MessageBody() dto: CreateRoomDto,
+  ) {
+    const room = await this.chatService.createRoom(dto, client.data.user.sub);
+
+    return room;
   }
 
-  @SubscribeMessage('leaveRoom')
-  async onLeaveRoom(
+  @SubscribeMessage('joinRoom')
+  async onJoinRoom(
     @ConnectedSocket() client: Socket,
-    @MessageBody(new WsValidationPipe()) messageData: { chatId: string }
-  ){
-    const { chatId } = messageData;
-    client.leave(`chat-${chatId}`);
-    await this.chatService.removeChat(chatId);
-  }
+    @MessageBody() dto: JoinRoomDto,
+    
+  ) {
+    const room = await this.chatService.findOneById(dto, client.data.user.sub);
+    client.join(`room_${room.id}`);
+
+    await this.messageService.markedMessages(room.id,client.data.user.sub);
+
+    const messages = await this.messageService.getRecentMessages(room.id);
+
   
+    this.server.to(`room_${room.id}`).emit('messages', messages);
+    return room;
+  }
+  @SubscribeMessage('leaveRoom')
+  onLeavRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() { roomId }: { roomId: string },
+  ) {
+    client.leave(`room_${roomId}`);
+    this.logger.log(
+      `user with ID ${client.data.user.sub} from room ID ${roomId}`,
+    );
+  }
+
   @SubscribeMessage('sendMessage')
   async onSendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody(new WsValidationPipe()) messageData: { chatId: string, text: string }
-  ){
-    const { chatId, text } = messageData;
-    console.log(messageData)
-    const senderId=client.data.user.sub
-    const chat=await this.chatService.findChatById(chatId)
-    const message=await this.messageService.createMessage(senderId,chatId,text)
-    this.server.to(`user-${chat.receiverId}`).emit('notification',{
-      data:message,
-      type:'newMessage'
-    });
-    return message;
+    @MessageBody() sendMessageDto: SendMessageDto,
+  ) {
+ 
+    const message = await this.messageService.createMessage(
+      sendMessageDto,
+      client.data.user.sub,
+    );
+
+    this.server.to(`room_${sendMessageDto.roomId}`).emit('newMessage',message);
   }
-  
+
   @SubscribeMessage('getAllUsers')
-  async onGetAllUsers(
-    @ConnectedSocket() client: Socket,
-  ){
-    const users=await this.userService.findAll()
-    return users;
+  async onGetAllUsers(@ConnectedSocket() client: Socket) {
+    try {
+      const users = await this.userService.findAll();
+
+      const usersWithStatus = await Promise.all(
+        users.map(async (user) => ({
+          ...user,
+          isOnline: await this.chatService.isUserOnline(user.id),
+        })),
+      );
+
+      return usersWithStatus;
+    } catch (error) {
+      this.logger.error(`Failed to get all users: ${error.message}`);
+      throw new WsException('Failed to get users');
+    }
   }
+
   private async initializeUserConnection(
     userPayload: JwtPayload,
     socket: Socket,
   ): Promise<void> {
     socket.data.user = userPayload;
-  
-    const chats = await this.chatService.findByUserId(userPayload.sub);
-    this.server.to(socket.id).emit('userAllChats', chats);
+
+    await this.chatService.setUserOnline(userPayload.sub, true);
+
+    const rooms = await this.chatService.getUserChats(userPayload.sub);
+    this.server.to(socket.id).emit('userAllChats', rooms);
     this.logger.log(
       `Client connected: ${socket.id} - User ID: ${userPayload.sub}`,
     );
@@ -159,8 +189,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       throw new WsUnauthorizedException('Invalid token: ' + error.message);
     }
   }
- 
+
   private handleConnectionError(socket: Socket, error: Error): void {
+    // this.onlineUsers.set(socket.data.user?.sub,false)
     this.logger.error(
       `Connection error for socket ${socket.id}: ${error.message}`,
     );

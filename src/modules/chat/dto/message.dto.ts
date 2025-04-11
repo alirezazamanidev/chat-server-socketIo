@@ -1,21 +1,13 @@
 import { Type } from "class-transformer";
 import { IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID } from "class-validator";
 
-export class FilterMessageDto {
+export class SendMessageDto {
 
-    first?: number;
-    @IsNumber()
-    @IsOptional()
-    @Type(() => Number)
-    rows?: number;
-    @IsString()
-    @IsOptional()
-    filter?: string;
+  @IsNotEmpty()
+  @IsUUID()
+  roomId?:string
   
-   
-    @IsUUID()
-    @IsString()
-    @IsNotEmpty()
-    chatId: string;
-  }
-  
+  @IsNotEmpty()
+  @IsString()
+  text:string
+}

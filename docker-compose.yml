@@ -24,5 +24,13 @@ services:
     depends_on:
       - mysql_db
 
+  redis:
+    container_name: redis_db_chat
+    image: redis:7.4.1-alpine3.20
+    env_file:
+     ./.env
+    ports:
+      - ${REDIS_PORT}:${REDIS_PORT}
+
 volumes:
   chatAppData:

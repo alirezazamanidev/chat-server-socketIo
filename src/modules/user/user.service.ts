@@ -11,6 +11,9 @@ export class UserService {
     private userRepository: Repository<User>,
   ) {}
 
+  async findById(id:string): Promise<User | null> {
+    return this.userRepository.findOne({ where: { id } });
+  }
   async createUser(userDto: CreateUserDto,file:Express.Multer.File): Promise<User> {
     const { password, username, ...userData } = userDto;
     const existingUser = await this.userRepository.findOne({
@@ -33,7 +36,7 @@ export class UserService {
   }
   async findAll() {
     return this.userRepository.find({
-      select: { id: true, username: true, fullName: true, created_at: true },
+      select: { id: true, username: true, fullName: true, created_at: true,avatar:true },
       order:{created_at:"DESC"}
     });
   }

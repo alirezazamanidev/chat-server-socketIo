@@ -21,6 +21,7 @@ export class AuthService {
       const user = await this.userService.createUser(userDto, avatar);
       const payload = { username: user.username, sub: user.id };
       return {
+        userId:user.id,
         success: true,
         jwtToken: this.jwtService.sign(payload),
       };
@@ -37,6 +38,7 @@ export class AuthService {
     }
     const payload = { username: user.username, sub: user.id };
     return {
+      userId:user.id,
       success: true,
       jwtToken: this.jwtService.sign(payload),
     };

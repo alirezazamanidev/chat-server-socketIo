@@ -1,5 +1,5 @@
 export enum RoomTypeEnum {
-    DIRECT = 'DIRECT',
+    PV = 'PV',
     GROUP = 'GROUP',
   }
   
