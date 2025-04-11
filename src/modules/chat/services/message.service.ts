@@ -12,9 +12,30 @@ export class MessageService {
   private readonly logger = new Logger(MessageService.name);
 
   constructor(
-    @InjectRepository(Message) private readonly messageRepo: Repository<Message>,
+    @InjectRepository(Message)
+    private readonly messageRepo: Repository<Message>,
     @Inject('REDIS_CLIENT') private readonly redisClient: Redis,
   ) {}
 
- 
+  async getRecnetMessages(roomId: string) {
+    const key = `room:messages:${roomId}`;
+    let messages: any = await this.redisClient.lrange(
+      key,
+      0,
+      this.MAX_MESSAGES,
+    );
+    if (messages && messages.length === 0) {
+      messages = await this.messageRepo.find({
+        where: { roomId },
+        relations: ['sender'],
+        select: { sender: { id: true, username: true, avatar: true } },
+        take: 50,
+      });
+      if(messages.length>0){
+
+        await this.redisClient.rpush(key,...messages);
+      }
+    }
+    return messages;
+  }
 }

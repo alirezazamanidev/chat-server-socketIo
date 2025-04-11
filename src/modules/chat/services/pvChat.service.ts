@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../../user/entities/user.entity';
 import { Repository, In, DataSource } from 'typeorm';
@@ -31,4 +37,35 @@ export class PvChatService {
     @Inject('REDIS_CLIENT') private readonly redisClient: Redis,
   ) {}
 
+  async getOrCreateRoom(joinRoomDto: JoinRoomDto, userId: string) {
+    const { reciverId } = joinRoomDto;
+    let room = await this.roomRepo
+      .createQueryBuilder('room')
+      .innerJoin('room.participants', 'p1', 'p1.id = :userId', { userId })
+      .innerJoin('room.participants', 'p2', 'p2.id = :reciverId', { reciverId })
+      .where('room.type = :type', { type: RoomTypeEnum.PV })
+      .getOne();
+      console.log(room);
+      
+    if (!room) {
+      const sender = await this.userRepo.findOne({
+        where: { id: userId },
+        select: ['id'],
+      });
+      const reciver = await this.userRepo.findOne({
+        where: { id: reciverId },
+        select: ['id'],
+      });
+      if (!sender) throw new NotFoundException('sender not founded');
+      if (!reciver) throw new NotFoundException('reciver not founded');
+      room = this.roomRepo.create({
+        type:RoomTypeEnum.PV,
+        isActive:true,
+        
+        participants: [sender, reciver],
+      });
+      room=await this.roomRepo.save(room);
+    }
+    return room;
+  }
 }
