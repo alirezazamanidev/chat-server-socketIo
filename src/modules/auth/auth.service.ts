@@ -19,7 +19,7 @@ export class AuthService {
   async signUp(userDto: CreateUserDto, avatar: Express.Multer.File) {
     try {
       const user = await this.userService.createUser(userDto, avatar);
-      const payload = { username: user.username, sub: user.id };
+      const payload = { username: user.username, id: user.id };
       return {
         userId:user.id,
         success: true,
@@ -36,7 +36,7 @@ export class AuthService {
     if (!user || !(await compare(password, user.hashPassword))) {
       throw new UnauthorizedException('Invalid credentials');
     }
-    const payload = { username: user.username, sub: user.id };
+    const payload = { username: user.username, id: user.id };
     return {
       userId:user.id,
       success: true,

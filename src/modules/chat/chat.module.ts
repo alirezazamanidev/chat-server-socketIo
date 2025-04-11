@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ChatService } from './services/chat.service';
-import { ChatGateway } from './chat.gateway';
+
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { User } from '../user/entities/user.entity';
@@ -12,12 +11,14 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { createKeyv } from '@keyv/redis';
 import { Room } from './entities/room.entity';
 import { RedisModule } from '../redis/redis.module';
+import { PvChatGateway } from './gateway/private.gateway';
+import { PvChatService } from './services/pvChat.service';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Room, User, Message]),
     UserModule,
     RedisModule.forRoot()
   ],
-  providers: [ChatGateway, ChatService, MessageService],
+  providers: [PvChatService, PvChatGateway, MessageService],
 })
 export class ChatModule {}
