@@ -24,6 +24,12 @@ export class Message {
 
     @Column({ default: false })
     isRead: boolean;
-    @CreateDateColumn()
-    created_at: Date;
+    @CreateDateColumn({
+        type: "timestamp",
+        transformer: {
+          from: (value: Date) => value,
+          to: () => new Date().toUTCString(),
+        },
+      })
+      created_at: Date;
 }

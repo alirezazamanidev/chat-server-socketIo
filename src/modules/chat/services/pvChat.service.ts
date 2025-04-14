@@ -43,29 +43,45 @@ export class PvChatService {
       .createQueryBuilder('room')
       .innerJoin('room.participants', 'p1', 'p1.id = :userId', { userId })
       .innerJoin('room.participants', 'p2', 'p2.id = :reciverId', { reciverId })
+      .innerJoinAndSelect('room.participants', 'participants')
+      .select([
+        'room.id',
+        'room.type',
+        'room.name',
+        'room.isActive',
+        'room.created_at',
+        'participants.id',
+        'participants.username',
+        'participants.avatar',
+        'participants.fullName',
+      ])
       .where('room.type = :type', { type: RoomTypeEnum.PV })
       .getOne();
-      console.log(room);
-      
-    if (!room) {
-      const sender = await this.userRepo.findOne({
-        where: { id: userId },
-        select: ['id'],
-      });
-      const reciver = await this.userRepo.findOne({
-        where: { id: reciverId },
-        select: ['id'],
-      });
-      if (!sender) throw new NotFoundException('sender not founded');
-      if (!reciver) throw new NotFoundException('reciver not founded');
-      room = this.roomRepo.create({
-        type:RoomTypeEnum.PV,
-        isActive:true,
-        
-        participants: [sender, reciver],
-      });
-      room=await this.roomRepo.save(room);
+    if (room) {
+      const receiver = room.participants.find((p) => p.id !== userId);
+     
+      room['receiver'] = receiver;
+      return room;
     }
+    const sender = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['id'],
+    });
+    const receiver = await this.userRepo.findOne({
+      where: { id: reciverId },
+      select: ['id', 'username', 'avatar','fullName'],
+    });
+    if (!sender) throw new NotFoundException('sender not founded');
+    if (!receiver) throw new NotFoundException('reciver not founded');
+    room = this.roomRepo.create({
+      type: RoomTypeEnum.PV,
+      isActive: true,
+
+      participants: [sender, receiver],
+    });
+    room = await this.roomRepo.save(room);
+
+    room['receiver'] = receiver;
     return room;
   }
 }

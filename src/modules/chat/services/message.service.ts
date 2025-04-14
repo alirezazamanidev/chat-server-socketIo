@@ -24,6 +24,7 @@ export class MessageService {
       0,
       this.MAX_MESSAGES,
     );
+    messages=messages ?messages.map(message=>JSON.parse(message)):[]
     if (messages && messages.length === 0) {
       messages = await this.messageRepo.find({
         where: { roomId },
@@ -33,9 +34,17 @@ export class MessageService {
       });
       if(messages.length>0){
 
-        await this.redisClient.rpush(key,...messages);
+        await this.redisClient.rpushx(key,...messages,this.CACHE_TTL);
       }
     }
     return messages;
+  }
+  async create(dto:SendMessageDto,senderId:string){
+    const key = `room:messages:${dto.roomId}`;
+
+    let message=this.messageRepo.create({...dto,senderId,isRead:true});
+    message=await this.messageRepo.save(message);
+    await this.redisClient.rpush(key,JSON.stringify(message));
+    return message
   }
 }
