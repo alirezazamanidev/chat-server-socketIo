@@ -21,12 +21,17 @@ export class AuthService {
       const user = await this.userService.createUser(userDto, avatar);
       const payload = { username: user.username, id: user.id };
       return {
-        userId:user.id,
+        userId: user.id,
         success: true,
-        jwtToken: this.jwtService.sign(payload),
+        jwtToken: this.jwtService.sign(payload,{
+          secret: process.env.JWT_SECRET,
+          expiresIn: '7d',
+        }),
       };
     } catch (error) {
-      unlinkSync(avatar.path)
+      if (avatar) {
+        unlinkSync(avatar.path);
+      }
       throw new InternalServerErrorException(error);
     }
   }
@@ -38,9 +43,12 @@ export class AuthService {
     }
     const payload = { username: user.username, id: user.id };
     return {
-      userId:user.id,
+      userId: user.id,
       success: true,
-      jwtToken: this.jwtService.sign(payload),
+      jwtToken: this.jwtService.sign(payload, {
+        secret: process.env.JWT_SECRET,
+        expiresIn: '7d',
+      }),
     };
   }
 }

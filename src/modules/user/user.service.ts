@@ -27,7 +27,7 @@ export class UserService {
       ...userData,
       hashPassword,
       username,
-      avatar:file.path
+      avatar:file?.path
     });
     return this.userRepository.save(user);
   }
