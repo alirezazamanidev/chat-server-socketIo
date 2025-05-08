@@ -29,15 +29,38 @@ export class ChatService {
     @Inject('REDIS_CLIENT') private readonly redisClient: Redis,
   ) {}
 
+  async findOneById(roomId:string){
+    
+  }
+
+  async listOfRoom(userId: string) {
+    const rooms = await this.roomRepo.createQueryBuilder('room')
+      .leftJoinAndSelect('room.messages', 'message') // اتصال پیام‌ها به اتاق
+      .leftJoinAndSelect('room.participants', 'participant') // اتصال شرکت‌کنندگان به اتاق
+      .where('participant.id = :userId', { userId }) // بررسی که کاربر در اتاق است
+      .andWhere('message.created_at IN (SELECT MAX(m.created_at) FROM message m WHERE m.roomId = room.id)') // پیدا کردن آخرین پیام بر اساس تاریخ
+      .orderBy('message.created_at', 'DESC') // مرتب‌سازی بر اساس تاریخ پیام
+      .getMany();
+
+    // برای هر اتاق آخرین پیام را از لیست پیام‌ها پیدا می‌کنیم
+    return rooms.map(room => {
+      const lastMessage = room.messages.length > 0 ? room.messages[0] : null;
+      return {
+        ...room,
+        lastMessage, // اضافه کردن آخرین پیام به اطلاعات اتاق
+      };
+    });
+  }
 
   async setOneline(userId:string){
-    await this.redisClient.set(`user:${userId}:online`,'true')
+    await this.redisClient.set(`user:online:${userId}`,'true')
   }
   async setOffline(userId: string): Promise<void> {
-    await this.redisClient.del(`user:${userId}:online`);
+
+    await this.redisClient.del(`user:online:${userId}`);
   }
-  async isOnline(userId: number): Promise<boolean> {
-    const value = await this.redisClient.get(`user:${userId}:online`);
+  async isOnline(userId: string): Promise<boolean> {
+    const value = await this.redisClient.get(`user:online:${userId}`);
     return value === 'true';
   }
 }

@@ -30,30 +30,48 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private userService: UserService,
     private jwtService: JwtService,
-    private chatService:ChatService,
+    private chatService: ChatService,
     private messageService: MessageService,
-    
   ) {}
 
-  async handleConnection(client:Socket) {
+  async handleConnection(client: Socket) {
     try {
-      const payload=this.authenticateSocket(client);
-      client.data.user=payload;
+      const payload = this.authenticateSocket(client);
+      client.data.user = payload;
       await this.chatService.setOneline(payload.id);
       client.join(`user_${payload.id}`);
-      this.logger.log(`Client Connected userId : ${payload.id} socketId:${client.id}`)
+      client.emit('online-status-user',{userId:payload.id,isOnline:true})
+      this.logger.log(
+        `Client Connected userId : ${payload.id} socketId:${client.id}`,
+      );
     } catch (error) {
       this.logger.error(`Socket connection error: ${error.message}`);
-      client.disconnect()
+      client.disconnect();
     }
   }
   async handleDisconnect(client: Socket) {
     await this.chatService.setOffline(client.data.user?.id);
     client.leave(`user_${client.data.user.id}`);
+    this.server.emit('online-status-user',{userId:client.data.user.id,isOnline:false})
+
     this.logger.log(`User ${client.data.user.id} disconnected and cleaned up`);
   }
+
+  @SubscribeMessage('get-user-list')
+  async getUsers(@ConnectedSocket() client: Socket) {
+    const users = await this.userService.findAll();
+
+    return await Promise.all(
+      users.map(async (u) => ({
+        ...u,
+        isOnline: await this.chatService.isOnline(u.id),
+      })),
+    );
+  }
+  @SubscribeMessage('joinRoom')
+  onJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: any) {}
   private authenticateSocket(socket: Socket): JwtPayload {
-    const token = this.extractJwtToken(socket);    
+    const token = this.extractJwtToken(socket);
     return this.jwtService.verify<JwtPayload>(token, {
       secret: process.env.JWT_SECRET,
     });

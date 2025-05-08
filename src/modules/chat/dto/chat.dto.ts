@@ -11,8 +11,7 @@ import { RoomTypeEnum } from '../enums/type.enum';
 export class JoinRoomDto {
   @IsNotEmpty()
   @IsUUID()
-  reciverId: string;
-
+  roomId:string
 }
 export class CreateRoomDto {
   @IsOptional()
