@@ -9,9 +9,15 @@ import {
 import { RoomTypeEnum } from '../enums/type.enum';
 
 export class JoinRoomDto {
-  @IsNotEmpty()
+
+  @IsEnum(RoomTypeEnum)
+  type:string
+  @IsOptional()
   @IsUUID()
-  roomId:string
+  roomId?:string
+  @IsOptional()
+  @IsUUID()
+  reciverId?:string
 }
 export class CreateRoomDto {
   @IsOptional()

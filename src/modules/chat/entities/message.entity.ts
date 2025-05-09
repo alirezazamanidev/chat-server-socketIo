@@ -16,9 +16,10 @@ export class Message {
     @JoinColumn({ name: 'roomId' })
     room:Room;
     
-    @ManyToOne(()=>User,{onDelete:'CASCADE'})
-    sender:User
-
+    @ManyToOne(() => User, { onDelete: 'CASCADE' })
+    @JoinColumn({ name: 'senderId' }) 
+    sender: User;
+    
     @Column()
     roomId: string;
 

@@ -11,10 +11,16 @@ export class UserService {
     private userRepository: Repository<User>,
   ) {}
 
-  async findById(id:string): Promise<User | null> {
-    return this.userRepository.findOne({ where: { id } });
+  async findById(id: string): Promise<User | null> {
+    return this.userRepository.findOne({
+      where: { id },
+      select: ['id', 'avatar', 'username', 'fullName'],
+    });
   }
-  async createUser(userDto: CreateUserDto,file:Express.Multer.File): Promise<User> {
+  async createUser(
+    userDto: CreateUserDto,
+    file: Express.Multer.File,
+  ): Promise<User> {
     const { password, username, ...userData } = userDto;
     const existingUser = await this.userRepository.findOne({
       where: { username },
@@ -27,7 +33,7 @@ export class UserService {
       ...userData,
       hashPassword,
       username,
-      avatar:file?.path
+      avatar: file?.path,
     });
     return this.userRepository.save(user);
   }
@@ -36,8 +42,14 @@ export class UserService {
   }
   async findAll() {
     return this.userRepository.find({
-      select: { id: true, username: true, fullName: true, created_at: true,avatar:true },
-      order:{created_at:"DESC"}
+      select: {
+        id: true,
+        username: true,
+        fullName: true,
+        created_at: true,
+        avatar: true,
+      },
+      order: { created_at: 'DESC' },
     });
   }
 }
