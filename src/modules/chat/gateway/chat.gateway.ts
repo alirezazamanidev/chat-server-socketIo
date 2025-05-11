@@ -207,6 +207,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private async joinRoomPv(userId: string, reciverId: string, socket: Socket) {
     const room = await this.chatService.findOnePvRoom(userId, reciverId);
+
     const reciver = await this.userService.findById(reciverId);
 
     if (room) {

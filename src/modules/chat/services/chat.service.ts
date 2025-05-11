@@ -43,13 +43,13 @@ export class ChatService {
   }
   async findOnePvRoom(userId: string, reciverId: string) {
     return this.roomRepo
-      .createQueryBuilder('room')
-      .leftJoinAndSelect('room.participants', 'participants')
-      .where('room.type = :type', { type: RoomTypeEnum.PV })
-      .andWhere('participants.id IN (:...users)', {
-        users: [userId, reciverId],
-      })
-      .getOne();
+    .createQueryBuilder('room')
+    .innerJoin('room.participants', 'participants')
+    .where('room.type = :type', { type: RoomTypeEnum.PV })
+    .andWhere('participants.id IN (:...users)', { users: [userId, reciverId] })
+    .groupBy('room.id')
+    .having('COUNT(DISTINCT participants.id) = 2')
+    .getOne();  
   }
   async createPvRoom(userId1: string, userId2: string) {
     const room = this.roomRepo.create({
