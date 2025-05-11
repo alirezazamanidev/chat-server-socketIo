@@ -40,4 +40,7 @@ export class Room {
   created_at: Date;
   @UpdateDateColumn()
   updated_at: Date;
+  @OneToOne(() => Message)
+  @JoinColumn({ name: 'lastMessageId' })
+  lastMessage: Message;
 }

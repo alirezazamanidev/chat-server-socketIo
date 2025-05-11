@@ -45,6 +45,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await this.chatService.setOneline(payload.id);
       client.join(`user_${payload.id}`);
       client.emit('online-status-user', { userId: payload.id, isOnline: true });
+      // get chat list 
+      const rooms=await this.chatService.findUserChats(payload.id);
+      this.server.to(`user_${payload.id}`).emit('chatList',rooms)
       this.logger.log(
         `Client Connected userId : ${payload.id} socketId:${client.id}`,
       );
@@ -59,7 +62,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.emit('online-status-user', {
       userId: client.data.user.id,
       isOnline: false,
-      lastSeen:new Date()
+      lastSeen: new Date(),
     });
 
     this.logger.log(`User ${client.data.user.id} disconnected and cleaned up`);
@@ -96,6 +99,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage('leaveRoom')
+  onLeaveRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { roomId?: string },
+  ) {
+    client.leave(`room_${data.roomId}`);
+
+    this.logger.log(
+      `left the Room socketId:${client.id} roomId: ${data.roomId}`,
+    );
+  }
+
   @SubscribeMessage('sendMessage')
   async onSendMessage(
     @ConnectedSocket() client: Socket,
@@ -103,28 +118,75 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const senderId = client.data.user.id;
     const { reciverId, text, type, roomId } = sendMessageDto;
+
     let RoomId = roomId;
-    if (type === RoomTypeEnum.PV && !RoomId && reciverId) {
+    let isNewRoom=false
+    if (type === RoomTypeEnum.PV) {
+      if (!reciverId) throw new WsException('Receiver ID is required');
+      
       let room = await this.chatService.findOnePvRoom(senderId, reciverId);
       if (!room) {
         room = await this.chatService.createPvRoom(senderId, reciverId);
+        isNewRoom = true;
       }
-      client.join(`room_${room.id}`)
+  
       RoomId = room.id;
+      client.join(`room_${RoomId}`);
     }
-    if (type === RoomTypeEnum.GROUP && !reciverId && roomId) {
-      RoomId = roomId;
-    }
+   
+  if (type === RoomTypeEnum.GROUP) {
+    if (!roomId) throw new WsException('Room ID is required for group message');
+    RoomId = roomId;
+  }
 
-    const message = await this.messageService.create({
-      text,
-      roomId: RoomId || '',
-      senderId,
-    });
-    this.server.to(`room_${roomId}`).emit('newMessage',message);
+  const message = await this.messageService.create({
+    text,
+    roomId: RoomId!,
+    senderId,
+  });
+
+    this.server.to(`room_${RoomId}`).emit('newMessage', message);
+
+
+    if (type === RoomTypeEnum.PV && reciverId) {
+      this.server.to(`user_${reciverId}`).emit('notification', {
+        type: 'message',
+        data: message,
+      });
+    }
+  
 
     // notifcation
-    // if()
+    if(type===RoomTypeEnum.PV){
+      this.server.to(`user_${reciverId}`).emit('notification',{
+        type:'message',
+        data:message
+      })
+    }
+    // chat list
+    if(isNewRoom){
+      const senderChats = await this.chatService.findUserChats(senderId);
+      this.server.to(`user_${senderId}`).emit('chatList', senderChats);
+  
+      if (reciverId) {
+        const receiverChats = await this.chatService.findUserChats(reciverId);
+        this.server.to(`user_${reciverId}`).emit('chatList', receiverChats);
+      }
+    }
+  }
+  @SubscribeMessage('isTyping')
+  onIsTypeing(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    {type,roomId}: { type: RoomTypeEnum; roomId?: string },
+  ) {
+
+    if(type===RoomTypeEnum.GROUP){
+      this.server.to(`room_${roomId}`).emit('typing',{
+        user:client.data.user,
+        istyping:true
+      })
+    }
   }
   private authenticateSocket(socket: Socket): JwtPayload {
     const token = this.extractJwtToken(socket);
@@ -145,27 +207,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private async joinRoomPv(userId: string, reciverId: string, socket: Socket) {
     const room = await this.chatService.findOnePvRoom(userId, reciverId);
-    
+    const reciver = await this.userService.findById(reciverId);
+
     if (room) {
       const messages = await this.messageService.getRecnetMessages(room.id);
-
       socket.join(`room_${room.id}`);
-      socket.emit('joinedRoom', {
-        room,
-        messages,
-      });
+      socket.emit('messages', messages);
     } else {
-      const reciver = await this.userService.findById(reciverId);
-      const isOnline = await this.chatService.isOnline(reciverId);
-      socket.emit('pvRoomInfo', {
-        room: null,
-        messages: [],
-        reciver: {
-          ...reciver,
-          isOnline,
-        },
-      });
     }
+    const isOnline = await this.chatService.isOnline(reciverId);
+    socket.emit('pvRoomInfo', {
+      reciver: {
+        ...reciver,
+        isOnline,
+      },
+    });
   }
   private async joinGroup(userId: string, roomId: string, socket: Socket) {
     const room = await this.chatService.findOneByIdGroup(roomId);

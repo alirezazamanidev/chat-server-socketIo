@@ -41,12 +41,15 @@ export class ChatService {
     // if(!room.participants.includes())
     return room;
   }
-  async findOnePvRoom(userId:string,reciverId:string){
-    return this.roomRepo.createQueryBuilder('room')
-    .leftJoinAndSelect('room.participants','participants')
-    .where('room.type = :type',{type:RoomTypeEnum.PV})
-    .andWhere('participants.id IN (:...users)',{users:[userId,reciverId]})
-    .getOne();
+  async findOnePvRoom(userId: string, reciverId: string) {
+    return this.roomRepo
+      .createQueryBuilder('room')
+      .leftJoinAndSelect('room.participants', 'participants')
+      .where('room.type = :type', { type: RoomTypeEnum.PV })
+      .andWhere('participants.id IN (:...users)', {
+        users: [userId, reciverId],
+      })
+      .getOne();
   }
   async createPvRoom(userId1: string, userId2: string) {
     const room = this.roomRepo.create({
@@ -87,4 +90,56 @@ export class ChatService {
     const value = await this.redisClient.get(`user:online:${userId}`);
     return value === 'true';
   }
+  async findUserChats(userId: string) {
+    const rooms = await this.roomRepo
+      .createQueryBuilder('room')
+      .leftJoin('room.participants', 'participant')
+      .leftJoinAndSelect('room.lastMessage', 'lastMessage')
+      .leftJoinAndSelect('room.participants', 'p') // همه کاربران اتاق
+      .addSelect((subQuery) => {
+        return subQuery
+          .select('COUNT(*)')
+          .from(Message, 'message')
+          .where('message.roomId = room.id')
+          .andWhere('message.senderId != :userId', { userId })
+          .andWhere('message.isRead = false');
+      }, 'unreadCount')
+      .where('participant.id = :userId', { userId })
+      .getRawAndEntities();
+  
+    const result = await Promise.all(
+      rooms.entities.map(async (room, index) => {
+        const otherUser =
+          room.type === RoomTypeEnum.PV
+            ? room.participants.find((p) => p.id !== userId)
+            : null;
+  
+        const isOnline =
+          room.type === RoomTypeEnum.PV && otherUser
+            ? await this.isOnline(otherUser.id)
+            : false;
+  
+        return {
+          id: room.id,
+          type: room.type,
+          name: otherUser?.fullName || room.name,
+          reciveer:
+            room.type === RoomTypeEnum.PV
+              ? {
+                  id: otherUser?.id,
+                  username: otherUser?.username,
+                  fullName: otherUser?.fullName,
+                  avatar: otherUser?.avatar,
+                  isOnline,
+                }
+              : undefined,
+          lastMessage: room.lastMessage || null,
+          unreadCount: parseInt(rooms.raw[index].unreadCount, 10),
+        };
+      }),
+    );
+  
+    return result;
+  }
+  
 }

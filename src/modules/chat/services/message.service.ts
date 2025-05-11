@@ -4,6 +4,7 @@ import { In, Not, Repository } from 'typeorm';
 import { Redis } from 'ioredis';
 import { Message } from '../entities/message.entity';
 import { SendMessageDto } from '../dto/message.dto';
+import { Room } from '../entities/room.entity';
 
 @Injectable()
 export class MessageService {
@@ -14,22 +15,25 @@ export class MessageService {
   constructor(
     @InjectRepository(Message)
     private readonly messageRepo: Repository<Message>,
+    @InjectRepository(Room) private readonly roomRepo:Repository<Room>,
     @Inject('REDIS_CLIENT') private readonly redisClient: Redis,
   ) {}
 
   async getRecnetMessages(roomId: string) {
 
-    return await this.messageRepo.find({where:{roomId},order:{created_at:'DESC'}});
+    return await this.messageRepo.find({where:{roomId},order:{created_at:'ASC'}});
 
   }
 
   async create({ text, roomId, senderId }: { text: string, roomId: string, senderId: string }) {
-    const message = this.messageRepo.create({
+    let message = this.messageRepo.create({
       text,
       roomId,
       senderId,
     });
-    return this.messageRepo.save(message);
+    message=await this.messageRepo.save(message);
+    await this.roomRepo.update({id:roomId},{lastMessage:message});
+    return message
   }
   async seenMessages(roomId: string, userId: string) {
     const unreadMessages = await this.messageRepo.find({
