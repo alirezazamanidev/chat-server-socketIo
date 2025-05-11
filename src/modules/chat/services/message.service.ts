@@ -20,9 +20,17 @@ export class MessageService {
   ) {}
 
   async getRecnetMessages(roomId: string) {
-
-    return await this.messageRepo.find({where:{roomId},order:{created_at:'ASC'}});
-
+    await this.messageRepo
+    .createQueryBuilder()
+    .update()
+    .set({ isRead: true })
+    .where('roomId = :roomId AND isRead = false', { roomId })
+    .execute();
+    const messages= await this.messageRepo.find({where:{roomId},order:{created_at:'ASC'}});
+    return messages;
+  }
+  async seenMessage(msgId:string){
+    return this.messageRepo.update({id:msgId,isRead:false},{isRead:true})
   }
 
   async create({ text, roomId, senderId }: { text: string, roomId: string, senderId: string }) {

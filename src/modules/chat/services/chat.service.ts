@@ -141,5 +141,8 @@ export class ChatService {
   
     return result;
   }
-  
+  async getOnlineStatuses(userIds: string[]): Promise<boolean[]> {
+
+    return Promise.all(userIds.map(id => this.isOnline(id)));
+  }
 }

@@ -17,7 +17,7 @@ export class JoinRoomDto {
   roomId?:string
   @IsOptional()
   @IsUUID()
-  reciverId?:string
+  receiverId?:string
 }
 export class CreateRoomDto {
   @IsOptional()

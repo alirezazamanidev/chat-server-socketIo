@@ -9,7 +9,7 @@ export class SendMessageDto {
   roomId?:string
   @IsOptional()
   @IsUUID()
-  reciverId?:string
+  receiverId?:string
   @IsEnum(RoomTypeEnum)
   type:string
   @IsNotEmpty()
