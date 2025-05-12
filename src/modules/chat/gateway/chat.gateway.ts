@@ -49,7 +49,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('online-status-user', { userId: payload.id, isOnline: true });
       const rooms = await this.chatService.findUserChats(payload.id);
       this.server.to(`user_${payload.id}`).emit('chatList', rooms);
-      this.logger.log(`Client Connected userId: ${payload.id} socketId: ${client.id}`);
+      this.logger.log(
+        `Client Connected userId: ${payload.id} socketId: ${client.id}`,
+      );
     } catch (error) {
       this.logger.error(`Socket connection error: ${error.message}`);
       client.disconnect();
@@ -78,7 +80,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async getUsers(@ConnectedSocket() client: Socket) {
     try {
       const users = await this.userService.findAll();
-      const onlineStatuses = await this.chatService.getOnlineStatuses(users.map(u => u.id));
+      const onlineStatuses = await this.chatService.getOnlineStatuses(
+        users.map((u) => u.id),
+      );
       return users.map((u, index) => ({
         ...u,
         isOnline: onlineStatuses[index],
@@ -90,15 +94,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('joinRoom')
-  async onJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: JoinRoomDto) {
+  async onJoinRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: JoinRoomDto,
+  ) {
     try {
       const userId = client.data.user.id;
       switch (data.type) {
         case RoomTypeEnum.GROUP:
-          if (!data.roomId) throw new WsException('Room ID is required for group chat');
+          if (!data.roomId)
+            throw new WsException('Room ID is required for group chat');
           return await this.joinGroup(userId, data.roomId, client);
         case RoomTypeEnum.PV:
-          if (!data.receiverId) throw new WsException('Receiver ID is required for private chat');
+          if (!data.receiverId)
+            throw new WsException('Receiver ID is required for private chat');
           return await this.joinRoomPv(userId, data.receiverId, client);
         default:
           throw new WsException('Invalid room type');
@@ -110,11 +119,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('leaveRoom')
-  onLeaveRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { roomId?: string }) {
+  onLeaveRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { roomId?: string },
+  ) {
     try {
       if (!data.roomId) throw new WsException('Room ID is required');
       client.leave(`room_${data.roomId}`);
-      this.logger.log(`Left the Room socketId: ${client.id} roomId: ${data.roomId}`);
+      this.logger.log(
+        `Left the Room socketId: ${client.id} roomId: ${data.roomId}`,
+      );
     } catch (error) {
       this.logger.error(`Error in leaveRoom: ${error.message}`);
       throw new WsException('Failed to leave room');
@@ -122,7 +136,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('sendMessage')
-  async onSendMessage(@ConnectedSocket() client: Socket, @MessageBody() sendMessageDto: SendMessageDto) {
+  async onSendMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() sendMessageDto: SendMessageDto,
+  ) {
     try {
       const senderId = client.data.user.id;
       const { receiverId, text, type, roomId } = sendMessageDto;
@@ -140,7 +157,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         RoomId = room.id;
         client.join(`room_${RoomId}`);
       } else if (type === RoomTypeEnum.GROUP) {
-        if (!roomId) throw new WsException('Room ID is required for group message');
+        if (!roomId)
+          throw new WsException('Room ID is required for group message');
         const room = await this.chatService.findOneByIdGroup(roomId);
         if (!room.participants.some((p) => p.id === senderId)) {
           throw new WsException('You are not a member of this group');
@@ -152,20 +170,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         text,
         roomId: RoomId!,
         senderId,
-      
       });
 
       let isRead = false;
       if (type === RoomTypeEnum.PV && receiverId) {
-        const roomSockets = await this.server.in(`room_${RoomId}`).fetchSockets();
-        const isReceiverInRoom = roomSockets.some((socket) => socket.data?.user?.id === receiverId)
+        const roomSockets = await this.server
+          .in(`room_${RoomId}`)
+          .fetchSockets();
+        const isReceiverInRoom = roomSockets.some(
+          (socket) => socket.data?.user?.id === receiverId,
+        );
         if (isReceiverInRoom) {
           isRead = true;
-          await this.messageService.seenMessage(message.id);
+          await this.messageService.seenMessage(message.id, receiverId);
         }
       }
 
-      this.server.to(`room_${RoomId}`).emit('newMessage', { ...message, isRead });
+      this.server
+        .to(`room_${RoomId}`)
+        .emit('newMessage', { ...message, isRead });
 
       if (type === RoomTypeEnum.PV && receiverId) {
         this.server.to(`user_${receiverId}`).emit('notification', {
@@ -178,7 +201,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const senderChats = await this.chatService.findUserChats(senderId);
         this.server.to(`user_${senderId}`).emit('chatList', senderChats);
         if (await this.chatService.isOnline(receiverId)) {
-          const receiverChats = await this.chatService.findUserChats(receiverId);
+          const receiverChats =
+            await this.chatService.findUserChats(receiverId);
           this.server.to(`user_${receiverId}`).emit('chatList', receiverChats);
         }
       }
@@ -220,7 +244,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private extractJwtToken(socket: Socket): string {
     const authHeader = socket.handshake.headers.authorization;
-    if (!authHeader) throw new UnauthorizedException('No authorization header found');
+    if (!authHeader)
+      throw new UnauthorizedException('No authorization header found');
     const [bearer, token] = authHeader.split(' ');
     if (bearer.toLowerCase() !== 'bearer' || !token || !isJWT(token)) {
       throw new UnauthorizedException('Invalid or missing token');
@@ -231,20 +256,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private async joinRoomPv(userId: string, receiverId: string, socket: Socket) {
     try {
       let room = await this.chatService.findOnePvRoom(userId, receiverId);
-      if (!room) {
-        room = await this.chatService.createPvRoom(userId, receiverId);
+    
+      if (room) {
+        socket.join(`room_${room.id}`);
+        const messages = await this.messageService.getRecentMessages(
+          room.id,
+          userId,
+        );
+        this.server.to(`room_${room.id}`).emit('messages', messages);
+     
       }
-
-      const messages = await this.messageService.getRecnetMessages(room.id);
-      socket.join(`room_${room.id}`);
-      socket.emit('messages', messages);
-
       const receiver = await this.userService.findById(receiverId);
       const isOnline = await this.chatService.isOnline(receiverId);
       socket.emit('pvRoomInfo', {
         receiver: { ...receiver, isOnline },
       });
-
       return room;
     } catch (error) {
       this.logger.error(`Error in joinRoomPv: ${error.message}`);
@@ -259,7 +285,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         throw new WsException('Access denied');
       }
       socket.join(`room_${room.id}`);
-      const messages = await this.messageService.getRecnetMessages(room.id);
+      const messages = await this.messageService.getRecentMessages(
+        room.id,
+        userId,
+      );
       this.server.to(`room_${room.id}`).emit('joinedRoom', { room, messages });
     } catch (error) {
       this.logger.error(`Error in joinGroup: ${error.message}`);

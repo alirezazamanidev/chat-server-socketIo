@@ -41,47 +41,68 @@ export class ChatService {
     // if(!room.participants.includes())
     return room;
   }
-  async findOnePvRoom(userId: string, reciverId: string) {
-    return this.roomRepo
-    .createQueryBuilder('room')
-    .innerJoin('room.participants', 'participants')
-    .where('room.type = :type', { type: RoomTypeEnum.PV })
-    .andWhere('participants.id IN (:...users)', { users: [userId, reciverId] })
-    .groupBy('room.id')
-    .having('COUNT(DISTINCT participants.id) = 2')
-    .getOne();  
-  }
-  async createPvRoom(userId1: string, userId2: string) {
-    const room = this.roomRepo.create({
-      type: 'pv',
-      participants: [{ id: userId1 }, { id: userId2 }],
-    });
-    return this.roomRepo.save(room);
-  }
-  async listOfRoom(userId: string) {
-    const rooms = await this.roomRepo
-      .createQueryBuilder('room')
-      .leftJoinAndSelect('room.messages', 'message') // اتصال پیام‌ها به اتاق
-      .leftJoinAndSelect('room.participants', 'participant') // اتصال شرکت‌کنندگان به اتاق
-      .where('participant.id = :userId', { userId }) // بررسی که کاربر در اتاق است
-      .andWhere(
-        'message.created_at IN (SELECT MAX(m.created_at) FROM message m WHERE m.roomId = room.id)',
-      ) // پیدا کردن آخرین پیام بر اساس تاریخ
-      .orderBy('message.created_at', 'DESC') // مرتب‌سازی بر اساس تاریخ پیام
-      .getMany();
+  async findOnePvRoom(
+    userId: string,
+    receiverId: string,
+  ): Promise<Room | null> {
+    if (!userId || !receiverId) {
+      throw new BadRequestException('User ID and receiver ID are required');
+    }
+    if (userId === receiverId) {
+      throw new BadRequestException('Cannot create a room with yourself');
+    }
+    try {
+      const cachKey = `pv_room:${[userId, receiverId].sort().join(':')}`;
+      const cachedRoom = await this.redisClient.get(cachKey);
+      if (cachedRoom) {
+        return JSON.parse(cachedRoom);
+      }
+      const room = await this.roomRepo
+        .createQueryBuilder('room')
+        .innerJoin('room.participants', 'p')
+        .where('room.type = :type', { type: RoomTypeEnum.PV })
+        .andWhere('p.id IN (:...ids)', { ids: [userId, receiverId] })
+        .getOne();
 
-    // برای هر اتاق آخرین پیام را از لیست پیام‌ها پیدا می‌کنیم
-    return rooms.map((room) => {
-      const lastMessage = room.messages.length > 0 ? room.messages[0] : null;
-      return {
-        ...room,
-        lastMessage, // اضافه کردن آخرین پیام به اطلاعات اتاق
-      };
-    });
+      if (room) {
+        await this.redisClient.setex(cachKey, 3600, JSON.stringify(room));
+      }
+      return room;
+    } catch (error) {
+      this.logger.error(`Error in findOnePvRoom: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async createPvRoom(userId1: string, userId2: string): Promise<Room> {
+    try {
+      const [user1, user2] = await Promise.all([
+        this.userRepo.findOneOrFail({ where: { id: userId1 }, select: ['id'] }),
+        this.userRepo.findOneOrFail({ where: { id: userId2 }, select: ['id'] }),
+      ]);
+
+      const room = this.roomRepo.create({
+        type: RoomTypeEnum.PV,
+        participants: [user1, user2],
+      });
+
+      const savedRoom = await this.roomRepo.save(room);
+
+      // کش کردن اتاق
+      const cacheKey = `pv_room:${[userId1, userId2].sort().join(':')}`;
+      await this.redisClient.setex(cacheKey, 3600, JSON.stringify(savedRoom));
+
+      return savedRoom;
+    } catch (error) {
+      this.logger.error(`Error in createPvRoom: ${error.message}`);
+      throw error instanceof NotFoundException
+        ? error
+        : new BadRequestException('Failed to create PV room');
+    }
   }
 
   async setOneline(userId: string) {
-    await this.redisClient.set(`user:online:${userId}`, 'true');
+    await this.redisClient.set(`user:online:${userId}`, 'true', 'EX', 60);
   }
   async setOffline(userId: string): Promise<void> {
     await this.redisClient.del(`user:online:${userId}`);
@@ -90,59 +111,114 @@ export class ChatService {
     const value = await this.redisClient.get(`user:online:${userId}`);
     return value === 'true';
   }
+
   async findUserChats(userId: string) {
-    const rooms = await this.roomRepo
-      .createQueryBuilder('room')
-      .leftJoin('room.participants', 'participant')
-      .leftJoinAndSelect('room.lastMessage', 'lastMessage')
-      .leftJoinAndSelect('room.participants', 'p') // همه کاربران اتاق
-      .addSelect((subQuery) => {
-        return subQuery
-          .select('COUNT(*)')
-          .from(Message, 'message')
-          .where('message.roomId = room.id')
-          .andWhere('message.senderId != :userId', { userId })
-          .andWhere('message.isRead = false');
-      }, 'unreadCount')
-      .where('participant.id = :userId', { userId })
-      .getRawAndEntities();
-  
-    const result = await Promise.all(
-      rooms.entities.map(async (room, index) => {
-        const otherUser =
-          room.type === RoomTypeEnum.PV
-            ? room.participants.find((p) => p.id !== userId)
-            : null;
-  
-        const isOnline =
-          room.type === RoomTypeEnum.PV && otherUser
-            ? await this.isOnline(otherUser.id)
-            : false;
-  
-        return {
-          id: room.id,
-          type: room.type,
-          name: otherUser?.fullName || room.name,
-          reciveer:
+    try {
+      // // چک کردن کش
+      const cacheKey = `user_chats:${userId}`;
+      const cachedChats = await this.redisClient.get(cacheKey);
+      if (cachedChats) {
+        return JSON.parse(cachedChats);
+      }
+
+      // گرفتن اتاق‌ها با اطلاعات مورد نیاز
+      const rooms = await this.roomRepo
+        .createQueryBuilder('room')
+        .leftJoinAndSelect('room.participants', 'participant')
+        .leftJoinAndSelect('room.lastMessage', 'lastMessage')
+        .select([
+          'room.id',
+          'room.type',
+          'room.name',
+          'room.isActive',
+         
+          'participant.id',
+          'participant.username',
+          'participant.fullName',
+          'participant.avatar',
+          'lastMessage.id',
+          'lastMessage.text',
+          'lastMessage.created_at',
+      
+        ])
+        .where('participant.id = userId', { userId })
+        .andWhere('room.isActive = true')
+        .getMany();
+      // محاسبه اطلاعات چت‌ها
+      const result = await Promise.all(
+        rooms.map(async (room) => {
+          // پیدا کردن کاربر مقابل در چت خصوصی
+          const otherUser =
             room.type === RoomTypeEnum.PV
-              ? {
-                  id: otherUser?.id,
-                  username: otherUser?.username,
-                  fullName: otherUser?.fullName,
-                  avatar: otherUser?.avatar,
-                  isOnline,
-                }
-              : undefined,
-          lastMessage: room.lastMessage || null,
-          unreadCount: parseInt(rooms.raw[index].unreadCount, 10),
-        };
-      }),
-    );
-  
-    return result;
+              ? room.participants.find((p) => p.id !== userId)
+              : null;
+
+          // گرفتن تعداد پیام‌های خوانده‌نشده
+          const unreadCount = await this.getUnreadCount(room.id, userId);
+
+          // بررسی وضعیت آنلاین
+          const isOnline =
+            room.type === RoomTypeEnum.PV && otherUser
+              ? await this.isOnline(otherUser.id)
+              : false;
+
+          return {
+            id: room.id,
+            type: room.type,
+            name: otherUser?.fullName || room.name || null,
+            receiver:
+              room.type === RoomTypeEnum.PV && otherUser
+                ? {
+                    id: otherUser.id,
+                    username: otherUser.username,
+                    fullName: otherUser.fullName,
+                    avatar: otherUser.avatar || null,
+                    isOnline,
+                  }
+                : undefined,
+            lastMessage: room.lastMessage || null,
+            unreadCount,
+          };
+        }),
+      );
+
+      // ذخیره در کش
+      if (result.length !== 0) {
+        await this.redisClient.setex(cacheKey, 3600, JSON.stringify(result));
+      }
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Error in findUserChats: ${error.message}`,
+        error.stack,
+      );
+      throw error instanceof BadRequestException ||
+        error instanceof NotFoundException
+        ? error
+        : new BadRequestException('Failed to fetch user chats');
+    }
   }
   async getOnlineStatuses(userIds: string[]): Promise<boolean[]> {
+    return Promise.all(userIds.map((id) => this.isOnline(id)));
+  }
+  private async getUnreadCount(
+    roomId: string,
+    userId: string,
+  ): Promise<number> {
+    const cacheKey = `unread:${roomId}:${userId}`;
+    const cachedCount = await this.redisClient.get(cacheKey);
+    if (cachedCount !== null) {
+      return parseInt(cachedCount, 10);
+    }
 
-    return Promise.all(userIds.map(id => this.isOnline(id)));
+    const count = await this.messageRepo
+      .createQueryBuilder('message')
+      .where('message.roomId = :roomId', { roomId })
+      .andWhere('message.senderId != :userId', { userId })
+      .andWhere('message.isRead = :isRead', { isRead: false })
+      .getCount();
+
+    await this.redisClient.setex(cacheKey, 3600, count.toString());
+    return count;
   }
 }

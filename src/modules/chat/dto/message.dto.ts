@@ -16,3 +16,14 @@ export class SendMessageDto {
   @IsString()
   text:string
 }
+export class CreateMessageDto{
+  @IsNotEmpty()
+  @IsUUID()
+  roomId:string
+  @IsNotEmpty()
+  @IsString()
+  text:string
+  @IsNotEmpty()
+  @IsUUID()
+  senderId:string
+}
