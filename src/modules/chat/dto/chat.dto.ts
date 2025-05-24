@@ -8,7 +8,7 @@ import {
 } from 'class-validator';
 export class JoinRoomDto {
   
-  @IsOptional()
+  @IsNotEmpty()
   @IsUUID()
-  receiverId?:string
+  receiverId:string
 }

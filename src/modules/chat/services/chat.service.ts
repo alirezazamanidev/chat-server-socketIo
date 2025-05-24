@@ -28,11 +28,43 @@ export class ChatService {
     private readonly messageRepo: Repository<Message>,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
+
+  async findOneRoom(
+    receiverId: string,
+    senderId: string,
+  ): Promise<{ room: Room | null; receiver: User }> {
+    const [ids1, ids2] = [receiverId, senderId].sort();
+    const cacheKey = `chat:room:${ids1}:${ids2}`;
+    const cachedRoom = await this.cacheManager.get<Room>(cacheKey);
+    const room =
+      cachedRoom ??
+      (await this.roomRepo.findOne({
+        where: [
+          { senderId, receiverId },
+          { senderId: receiverId, receiverId: senderId },
+        ],
+        relations: ['receiver'],
+      }));
+
+    const receiver = await this.userRepo.findOne({
+      where: { id: receiverId },
+      select: ['id', 'fullName', 'username', 'avatar', 'avatar'],
+    });
+    if (!receiver) {
+      throw new NotFoundException('Receiver not found');
+    }
+
+    if (room && !cachedRoom) {
+      await this.cacheManager.set(cacheKey, room, 3600); // Cache for 1 hour
+    }
+
+    return { room: room ?? null, receiver };
+  }
+
   async setOnelineChat(userId: string): Promise<void> {
     await this.cacheManager.set(`chat:online:${userId}`, true, 3600); // 1 hour
-
   }
-  async setOfflineChat(userId: string): Promise<void> { 
+  async setOfflineChat(userId: string): Promise<void> {
     await this.cacheManager.del(`chat:online:${userId}`);
   }
   async isOnlineChat(userId: string): Promise<boolean> {

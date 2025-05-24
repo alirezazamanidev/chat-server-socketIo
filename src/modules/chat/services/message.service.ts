@@ -26,8 +26,23 @@ export class MessageService {
     private readonly messageRepo: Repository<Message>,
     @InjectRepository(Room)
     private readonly roomRepo: Repository<Room>,
- @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
- 
+  async recentMessages(roomId: string): Promise<Message[]> {
+    const cacheKey = `chat:recentMessages:${roomId}`;
+    const cachedMessages = await this.cacheManager.get<Message[]>(cacheKey);
+    if (cachedMessages) {
+      return cachedMessages;
+    }
+
+    const messages = await this.messageRepo.find({
+      where: { roomId },
+      order: { created_at: 'DESC' },
+      take: this.MAX_MESSAGES,
+    });
+
+    await this.cacheManager.set(cacheKey, messages, this.CACHE_TTL);
+    return messages;
+  }
 }

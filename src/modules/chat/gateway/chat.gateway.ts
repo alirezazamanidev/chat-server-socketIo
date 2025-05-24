@@ -18,6 +18,7 @@ import { MessageService } from '../services/message.service';
 import { UserService } from 'src/modules/user/user.service';
 import { ChatService } from '../services/chat.service';
 import { isJWT } from 'class-validator';
+import { JoinRoomDto } from '../dto/chat.dto';
 
 @WebSocketGateway({
   namespace: 'chat',
@@ -37,7 +38,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private chatService: ChatService,
     private messageService: MessageService,
   ) {}
-
   async handleConnection(client: Socket) {
     try {
       const payload = this.authenticateSocket(client);
@@ -78,13 +78,40 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async getUsers(@ConnectedSocket() client: Socket) {
     try {
       const users = await this.userService.findAll();
-     return users;
+      return users;
     } catch (error) {
       this.logger.error(`Error in getUsers: ${error.message}`);
       throw new WsException('Failed to fetch users');
     }
   }
 
+  @SubscribeMessage('joinRoom')
+  async joinRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() { receiverId }: JoinRoomDto,
+  ) {
+    try {
+      const userId = client.data.user?.id;
+      if (!userId) {
+        throw new UnauthorizedException('User not authenticated');
+      }
+      const { receiver, room } = await this.chatService.findOneRoom(
+        receiverId,
+        userId,
+      );
+      if (room) {
+        const messages = await this.messageService.recentMessages(room.id);
+        client.join(`room_${room.id}`);
+        this.logger.log(`User ${userId} joined room ${room.id}`);
+        this.server.to(`room_${room.id}`).emit('messages', messages);
+      }
+
+      client.emit('roomInfo', { ...receiver });
+    } catch (error) {
+      this.logger.error(`Error in joinRoom: ${error.message}`);
+      throw new WsException('Failed to join room');
+    }
+  }
 
   private authenticateSocket(socket: Socket): JwtPayload {
     try {
@@ -107,6 +134,4 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     return token;
   }
-
-  
 }
