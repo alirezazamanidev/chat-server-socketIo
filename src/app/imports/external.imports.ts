@@ -1,3 +1,4 @@
+
 import { ConfigModule } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { TypeOrmDbConfig } from "src/configs/typeorm.config";
@@ -11,5 +12,7 @@ export const appExternalImports=[
     TypeOrmModule.forRootAsync({
         useClass: TypeOrmDbConfig,
         inject:[TypeOrmDbConfig]
-    })
+    }),
+   
+
 ]

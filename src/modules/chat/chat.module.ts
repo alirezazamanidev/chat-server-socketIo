@@ -10,7 +10,6 @@ import { UserModule } from '../user/user.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { createKeyv } from '@keyv/redis';
 import { Room } from './entities/room.entity';
-import { RedisModule } from '../redis/redis.module';
 
 import { ChatService } from './services/chat.service';
 import { ChatGateway } from './gateway/chat.gateway';
@@ -18,7 +17,16 @@ import { ChatGateway } from './gateway/chat.gateway';
   imports: [
     TypeOrmModule.forFeature([Room, User, Message]),
     UserModule,
-    RedisModule.forRoot(),
+    CacheModule.registerAsync({
+        useFactory:async () => {
+            return {
+                stores:[
+                    createKeyv(`redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`),
+                ]
+            }
+        }
+      
+    }),
   ],
   providers: [ChatService, ChatGateway, MessageService],
 })

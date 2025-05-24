@@ -18,9 +18,7 @@ import { MessageService } from '../services/message.service';
 import { UserService } from 'src/modules/user/user.service';
 import { ChatService } from '../services/chat.service';
 import { isJWT } from 'class-validator';
-import { JoinRoomDto } from '../dto/chat.dto';
-import { SendMessageDto } from '../dto/message.dto';
-import { RoomTypeEnum } from '../enums/type.enum';
+
 @WebSocketGateway({
   namespace: 'chat',
   cors: {
@@ -44,11 +42,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const payload = this.authenticateSocket(client);
       client.data.user = payload;
-      await this.chatService.setOneline(payload.id);
+      await this.chatService.setOnelineChat(payload.id);
       client.join(`user_${payload.id}`);
       client.emit('online-status-user', { userId: payload.id, isOnline: true });
-      const rooms = await this.chatService.findUserChats(payload.id);
-      this.server.to(`user_${payload.id}`).emit('chatList', rooms);
+      // const rooms = await this.chatService.findUserChats(payload.id);
+      // this.server.to(`user_${payload.id}`).emit('chatList', rooms);
       this.logger.log(
         `Client Connected userId: ${payload.id} socketId: ${client.id}`,
       );
@@ -62,7 +60,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const userId = client.data.user?.id;
       if (userId) {
-        await this.chatService.setOffline(userId);
+        await this.chatService.setOfflineChat(userId);
         client.leave(`user_${userId}`);
         this.server.emit('online-status-user', {
           userId,
@@ -80,156 +78,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async getUsers(@ConnectedSocket() client: Socket) {
     try {
       const users = await this.userService.findAll();
-      const onlineStatuses = await this.chatService.getOnlineStatuses(
-        users.map((u) => u.id),
-      );
-      return users.map((u, index) => ({
-        ...u,
-        isOnline: onlineStatuses[index],
-      }));
+     return users;
     } catch (error) {
       this.logger.error(`Error in getUsers: ${error.message}`);
       throw new WsException('Failed to fetch users');
     }
   }
 
-  @SubscribeMessage('joinRoom')
-  async onJoinRoom(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: JoinRoomDto,
-  ) {
-    try {
-      const userId = client.data.user.id;
-      switch (data.type) {
-        case RoomTypeEnum.GROUP:
-          if (!data.roomId)
-            throw new WsException('Room ID is required for group chat');
-          return await this.joinGroup(userId, data.roomId, client);
-        case RoomTypeEnum.PV:
-          if (!data.receiverId)
-            throw new WsException('Receiver ID is required for private chat');
-          return await this.joinRoomPv(userId, data.receiverId, client);
-        default:
-          throw new WsException('Invalid room type');
-      }
-    } catch (error) {
-      this.logger.error(`Error in joinRoom: ${error.message}`);
-      throw new WsException('Failed to join room');
-    }
-  }
-
-  @SubscribeMessage('leaveRoom')
-  onLeaveRoom(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomId?: string },
-  ) {
-    try {
-      if (!data.roomId) throw new WsException('Room ID is required');
-      client.leave(`room_${data.roomId}`);
-      this.logger.log(
-        `Left the Room socketId: ${client.id} roomId: ${data.roomId}`,
-      );
-    } catch (error) {
-      this.logger.error(`Error in leaveRoom: ${error.message}`);
-      throw new WsException('Failed to leave room');
-    }
-  }
-
-  @SubscribeMessage('sendMessage')
-  async onSendMessage(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() sendMessageDto: SendMessageDto,
-  ) {
-    try {
-      const senderId = client.data.user.id;
-      const { receiverId, text, type, roomId } = sendMessageDto;
-
-      let RoomId = roomId;
-      let isNewRoom = false;
-
-      if (type === RoomTypeEnum.PV) {
-        if (!receiverId) throw new WsException('Receiver ID is required');
-        let room = await this.chatService.findOnePvRoom(senderId, receiverId);
-        if (!room) {
-          room = await this.chatService.createPvRoom(senderId, receiverId);
-          isNewRoom = true;
-        }
-        RoomId = room.id;
-        client.join(`room_${RoomId}`);
-      } else if (type === RoomTypeEnum.GROUP) {
-        if (!roomId)
-          throw new WsException('Room ID is required for group message');
-        const room = await this.chatService.findOneByIdGroup(roomId);
-        if (!room.participants.some((p) => p.id === senderId)) {
-          throw new WsException('You are not a member of this group');
-        }
-        RoomId = roomId;
-      }
-
-      const message = await this.messageService.create({
-        text,
-        roomId: RoomId!,
-        senderId,
-      });
-
-      let isRead = false;
-      if (type === RoomTypeEnum.PV && receiverId) {
-        const roomSockets = await this.server
-          .in(`room_${RoomId}`)
-          .fetchSockets();
-        const isReceiverInRoom = roomSockets.some(
-          (socket) => socket.data?.user?.id === receiverId,
-        );
-        if (isReceiverInRoom) {
-          isRead = true;
-          await this.messageService.seenMessage(message.id, receiverId);
-        }
-      }
-
-      this.server
-        .to(`room_${RoomId}`)
-        .emit('newMessage', { ...message, isRead });
-
-      if (type === RoomTypeEnum.PV && receiverId) {
-        this.server.to(`user_${receiverId}`).emit('notification', {
-          type: 'message',
-          data: { ...message, isRead },
-        });
-      }
-
-      if (isNewRoom && receiverId) {
-        const senderChats = await this.chatService.findUserChats(senderId);
-        this.server.to(`user_${senderId}`).emit('chatList', senderChats);
-        if (await this.chatService.isOnline(receiverId)) {
-          const receiverChats =
-            await this.chatService.findUserChats(receiverId);
-          this.server.to(`user_${receiverId}`).emit('chatList', receiverChats);
-        }
-      }
-    } catch (error) {
-      this.logger.error(`Error in sendMessage: ${error.message}`);
-      throw new WsException('Failed to send message');
-    }
-  }
-
-  @SubscribeMessage('isTyping')
-  onIsTypeing(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() { type, roomId }: { type: RoomTypeEnum; roomId?: string },
-  ) {
-    try {
-      if (type === RoomTypeEnum.GROUP || type === RoomTypeEnum.PV) {
-        if (!roomId) throw new WsException('Room ID is required');
-        this.server.to(`room_${roomId}`).emit('typing', {
-          user: client.data.user,
-          istyping: true,
-        });
-      }
-    } catch (error) {
-      this.logger.error(`Error in isTyping: ${error.message}`);
-      throw new WsException('Failed to handle typing event');
-    }
-  }
 
   private authenticateSocket(socket: Socket): JwtPayload {
     try {
@@ -253,46 +108,5 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return token;
   }
 
-  private async joinRoomPv(userId: string, receiverId: string, socket: Socket) {
-    try {
-      let room = await this.chatService.findOnePvRoom(userId, receiverId);
-    
-      if (room) {
-        socket.join(`room_${room.id}`);
-        const messages = await this.messageService.getRecentMessages(
-          room.id,
-          userId,
-        );
-        this.server.to(`room_${room.id}`).emit('messages', messages);
-     
-      }
-      const receiver = await this.userService.findById(receiverId);
-      const isOnline = await this.chatService.isOnline(receiverId);
-      socket.emit('pvRoomInfo', {
-        receiver: { ...receiver, isOnline },
-      });
-      return room;
-    } catch (error) {
-      this.logger.error(`Error in joinRoomPv: ${error.message}`);
-      throw new WsException('Failed to join private room');
-    }
-  }
-
-  private async joinGroup(userId: string, roomId: string, socket: Socket) {
-    try {
-      const room = await this.chatService.findOneByIdGroup(roomId);
-      if (!room.participants.some((p) => p.id === userId)) {
-        throw new WsException('Access denied');
-      }
-      socket.join(`room_${room.id}`);
-      const messages = await this.messageService.getRecentMessages(
-        room.id,
-        userId,
-      );
-      this.server.to(`room_${room.id}`).emit('joinedRoom', { room, messages });
-    } catch (error) {
-      this.logger.error(`Error in joinGroup: ${error.message}`);
-      throw new WsException('Failed to join group room');
-    }
-  }
+  
 }
