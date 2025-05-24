@@ -60,7 +60,10 @@ export class ChatService {
 
     return { room: room ?? null, receiver };
   }
-
+  async create(senderId:string,receiverId:string):Promise<Room>{
+    let room=this.roomRepo.create({receiverId,senderId});
+    return await this.roomRepo.save(room)
+  }
   async setOnelineChat(userId: string): Promise<void> {
     await this.cacheManager.set(`chat:online:${userId}`, true, 3600); // 1 hour
   }

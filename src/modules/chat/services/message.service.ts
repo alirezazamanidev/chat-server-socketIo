@@ -26,6 +26,7 @@ export class MessageService {
     private readonly messageRepo: Repository<Message>,
     @InjectRepository(Room)
     private readonly roomRepo: Repository<Room>,
+
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
@@ -44,5 +45,26 @@ export class MessageService {
 
     await this.cacheManager.set(cacheKey, messages, this.CACHE_TTL);
     return messages;
+  }
+
+  async createMessage(
+    roomId: string,
+    text: string,
+    senderId: string,
+  ): Promise<Message> {
+    let message = this.messageRepo.create({ roomId, text, senderId });
+    message = await this.messageRepo.save(message);
+    // update lastMessage room
+    // TODO change to Ioredis
+    await this.roomRepo.update({ id: roomId }, { lastMessage: message });
+    const catchedMessages = await this.cacheManager.get<Message[]>(
+      `chat:recentMessages:${roomId}`,
+    );
+    catchedMessages?.push(message);
+    await this.cacheManager.set(
+      `chat:recentMessages:${roomId}`,
+      catchedMessages,
+    );
+    return message;
   }
 }

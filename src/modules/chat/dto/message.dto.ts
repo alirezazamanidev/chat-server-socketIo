@@ -1,13 +1,9 @@
 import { Type } from "class-transformer";
 import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID } from "class-validator";
 export class SendMessageDto {
-
-  @IsOptional()
+  @IsNotEmpty()
   @IsUUID()
-  roomId?:string
-  @IsOptional()
-  @IsUUID()
-  receiverId?:string
+  receiverId:string
   
   @IsNotEmpty()
   @IsString()

@@ -19,6 +19,7 @@ import { UserService } from 'src/modules/user/user.service';
 import { ChatService } from '../services/chat.service';
 import { isJWT } from 'class-validator';
 import { JoinRoomDto } from '../dto/chat.dto';
+import { SendMessageDto } from '../dto/message.dto';
 
 @WebSocketGateway({
   namespace: 'chat',
@@ -110,6 +111,35 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (error) {
       this.logger.error(`Error in joinRoom: ${error.message}`);
       throw new WsException('Failed to join room');
+    }
+  }
+
+  @SubscribeMessage('sendMessage')
+  async onSendMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() { text, receiverId }: SendMessageDto,
+  ) {
+    try {
+      const user = client.data.user;
+      if (!user) {
+        throw new UnauthorizedException('User not authenticated');
+      }
+      let { room } = await this.chatService.findOneRoom(receiverId, user.id);
+      let chatId = room ? room.id : null;
+      if (!room) {
+        room=await this.chatService.create(user.id,receiverId);
+        chatId=room.id;
+        client.join(`room_${room.id}`);
+      }
+      const message = await this.messageService.createMessage(room.id,text,user.id);
+      
+      this.server.to(`room_${chatId}`).emit('ٔnewMessage',message);
+      this.logger.log(
+        `User ${user.id} sent message to room ${chatId}: ${text}`,
+      );
+    } catch (error) {
+      this.logger.error(`Error in sendMessage: ${error.message}`);
+      throw new WsException('Failed to send message');
     }
   }
 
